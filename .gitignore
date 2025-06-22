@@ -1,5 +1,35 @@
-.env
+
 /rag
 /_pycache
 /__pycache__
 .streamlit
+# Ignore common OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Ignore common editor/IDE specific files
+.vscode/             # Visual Studio Code settings
+*.sublime-project
+*.sublime-workspace
+.idea/               # IntelliJ/PyCharm IDE files
+
+# Ignore Python specific files (assuming your RAG project uses Python)
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+.ipynb_checkpoints/  # Jupyter Notebook checkpoints
+venv/                # Virtual environments
+env/                 # Another common name for virtual environments
+*.egg-info/
+.pytest_cache/
+
+# Ignore logs and temporary files
+*.log
+*.tmp
+*~
+*.bak
+
+# If you later decide rag_prototype should be ignored or a submodule:
+# rag_prototype/
