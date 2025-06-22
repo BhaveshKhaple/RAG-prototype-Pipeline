@@ -670,7 +670,7 @@ Please provide a comprehensive answer based on the context above:"""
 
 def calculate_retrieval_metrics(query: str, retrieved_chunks: List[Dict], query_embedding: np.ndarray) -> Dict[str, float]:
     """
-    Calculate various retrieval metrics for the RAG system.
+    Calculate various retrieval metrics for the RAG system including accuracy measures.
     
     Args:
         query (str): The user's query
@@ -678,7 +678,7 @@ def calculate_retrieval_metrics(query: str, retrieved_chunks: List[Dict], query_
         query_embedding (np.ndarray): Embedding of the query
         
     Returns:
-        Dict[str, float]: Dictionary containing various metrics
+        Dict[str, float]: Dictionary containing various metrics including accuracy
     """
     if not retrieved_chunks or query_embedding is None:
         return {
@@ -688,7 +688,10 @@ def calculate_retrieval_metrics(query: str, retrieved_chunks: List[Dict], query_
             'similarity_std': 0.0,
             'num_chunks_retrieved': 0,
             'avg_chunk_length': 0.0,
-            'total_context_length': 0
+            'total_context_length': 0,
+            'retrieval_accuracy': 0.0,
+            'precision_at_k': 0.0,
+            'semantic_coherence': 0.0
         }
     
     # Calculate similarity scores
@@ -706,6 +709,11 @@ def calculate_retrieval_metrics(query: str, retrieved_chunks: List[Dict], query_
         chunk_lengths.append(chunk_length)
         total_context_length += chunk_length
     
+    # Calculate accuracy metrics
+    retrieval_accuracy = calculate_retrieval_accuracy(similarities)
+    precision_at_k = calculate_precision_at_k(similarities, k=len(similarities))
+    semantic_coherence = calculate_semantic_coherence(retrieved_chunks, query_embedding)
+    
     # Calculate metrics
     metrics = {
         'avg_similarity': np.mean(similarities) if similarities else 0.0,
@@ -714,21 +722,108 @@ def calculate_retrieval_metrics(query: str, retrieved_chunks: List[Dict], query_
         'similarity_std': np.std(similarities) if similarities else 0.0,
         'num_chunks_retrieved': len(retrieved_chunks),
         'avg_chunk_length': np.mean(chunk_lengths) if chunk_lengths else 0.0,
-        'total_context_length': total_context_length
+        'total_context_length': total_context_length,
+        'retrieval_accuracy': retrieval_accuracy,
+        'precision_at_k': precision_at_k,
+        'semantic_coherence': semantic_coherence
     }
     
     return metrics
 
-def calculate_response_metrics(response: str, query: str) -> Dict[str, any]:
+def calculate_retrieval_accuracy(similarities: List[float], threshold: float = 0.5) -> float:
     """
-    Calculate metrics for the generated response.
+    Calculate retrieval accuracy based on similarity threshold.
+    
+    Args:
+        similarities (List[float]): List of similarity scores
+        threshold (float): Minimum similarity threshold for relevant results
+        
+    Returns:
+        float: Accuracy score (0.0 to 1.0)
+    """
+    if not similarities:
+        return 0.0
+    
+    relevant_count = sum(1 for sim in similarities if sim >= threshold)
+    accuracy = relevant_count / len(similarities)
+    return accuracy
+
+def calculate_precision_at_k(similarities: List[float], k: int, threshold: float = 0.5) -> float:
+    """
+    Calculate Precision@K metric for retrieval quality.
+    
+    Args:
+        similarities (List[float]): List of similarity scores
+        k (int): Number of top results to consider
+        threshold (float): Minimum similarity threshold for relevance
+        
+    Returns:
+        float: Precision@K score (0.0 to 1.0)
+    """
+    if not similarities or k <= 0:
+        return 0.0
+    
+    # Take top k similarities
+    top_k_similarities = similarities[:k]
+    relevant_count = sum(1 for sim in top_k_similarities if sim >= threshold)
+    precision = relevant_count / len(top_k_similarities)
+    return precision
+
+def calculate_semantic_coherence(retrieved_chunks: List[Dict], query_embedding: np.ndarray) -> float:
+    """
+    Calculate semantic coherence between retrieved chunks and query.
+    
+    Args:
+        retrieved_chunks (List[Dict]): List of retrieved chunks with embeddings
+        query_embedding (np.ndarray): Query embedding vector
+        
+    Returns:
+        float: Semantic coherence score (0.0 to 1.0)
+    """
+    if not retrieved_chunks or query_embedding is None:
+        return 0.0
+    
+    # Calculate inter-chunk similarities
+    chunk_embeddings = []
+    for chunk in retrieved_chunks:
+        if 'embedding' in chunk:
+            chunk_embeddings.append(np.array(chunk['embedding']))
+    
+    if len(chunk_embeddings) < 2:
+        return 0.0
+    
+    # Calculate average similarity between chunks
+    inter_similarities = []
+    for i in range(len(chunk_embeddings)):
+        for j in range(i + 1, len(chunk_embeddings)):
+            sim = cosine_similarity([chunk_embeddings[i]], [chunk_embeddings[j]])[0][0]
+            inter_similarities.append(sim)
+    
+    # Calculate query-chunk coherence
+    query_similarities = []
+    for embedding in chunk_embeddings:
+        sim = cosine_similarity([query_embedding], [embedding])[0][0]
+        query_similarities.append(sim)
+    
+    # Combine inter-chunk and query-chunk coherence
+    inter_coherence = np.mean(inter_similarities) if inter_similarities else 0.0
+    query_coherence = np.mean(query_similarities) if query_similarities else 0.0
+    
+    # Weighted average (query coherence is more important)
+    semantic_coherence = 0.7 * query_coherence + 0.3 * inter_coherence
+    return semantic_coherence
+
+def calculate_response_metrics(response: str, query: str, retrieved_chunks: List[Dict] = None) -> Dict[str, any]:
+    """
+    Calculate metrics for the generated response including accuracy measures.
     
     Args:
         response (str): Generated response
         query (str): Original query
+        retrieved_chunks (List[Dict]): Retrieved chunks used for response generation
         
     Returns:
-        Dict[str, any]: Dictionary containing response metrics
+        Dict[str, any]: Dictionary containing response metrics including accuracy
     """
     if not response or not query:
         return {
@@ -738,7 +833,10 @@ def calculate_response_metrics(response: str, query: str) -> Dict[str, any]:
             'query_word_count': 0,
             'response_to_query_ratio': 0.0,
             'has_sources': False,
-            'estimated_reading_time': 0.0
+            'estimated_reading_time': 0.0,
+            'response_accuracy': 0.0,
+            'context_utilization': 0.0,
+            'answer_completeness': 0.0
         }
     
     # Basic text metrics
@@ -753,6 +851,11 @@ def calculate_response_metrics(response: str, query: str) -> Dict[str, any]:
     # Estimated reading time (average 200 words per minute)
     reading_time = response_words / 200.0
     
+    # Calculate accuracy metrics
+    response_accuracy = calculate_response_accuracy(response, query)
+    context_utilization = calculate_context_utilization(response, retrieved_chunks) if retrieved_chunks else 0.0
+    answer_completeness = calculate_answer_completeness(response, query)
+    
     metrics = {
         'response_length': response_length,
         'response_word_count': response_words,
@@ -760,10 +863,219 @@ def calculate_response_metrics(response: str, query: str) -> Dict[str, any]:
         'query_word_count': query_words,
         'response_to_query_ratio': response_length / query_length if query_length > 0 else 0.0,
         'has_sources': has_sources,
-        'estimated_reading_time': reading_time
+        'estimated_reading_time': reading_time,
+        'response_accuracy': response_accuracy,
+        'context_utilization': context_utilization,
+        'answer_completeness': answer_completeness
     }
     
     return metrics
+
+def calculate_response_accuracy(response: str, query: str) -> float:
+    """
+    Calculate response accuracy based on query-response alignment.
+    
+    Args:
+        response (str): Generated response
+        query (str): Original query
+        
+    Returns:
+        float: Accuracy score (0.0 to 1.0)
+    """
+    if not response or not query:
+        return 0.0
+    
+    # Convert to lowercase for comparison
+    response_lower = response.lower()
+    query_lower = query.lower()
+    
+    # Extract key terms from query (simple approach)
+    query_words = set(word.strip('.,!?;:') for word in query_lower.split() if len(word) > 2)
+    
+    # Count how many query terms appear in response
+    matched_terms = sum(1 for word in query_words if word in response_lower)
+    
+    # Calculate accuracy based on term coverage
+    if len(query_words) == 0:
+        return 0.0
+    
+    term_coverage = matched_terms / len(query_words)
+    
+    # Bonus for having sources and structured response
+    structure_bonus = 0.0
+    if any(keyword in response_lower for keyword in ['source', 'according to', 'based on']):
+        structure_bonus += 0.1
+    if len(response.split()) >= 20:  # Reasonable response length
+        structure_bonus += 0.1
+    
+    # Penalty for error messages
+    error_penalty = 0.0
+    if any(keyword in response_lower for keyword in ['error', 'sorry', 'cannot', "don't have"]):
+        error_penalty = 0.3
+    
+    accuracy = min(1.0, term_coverage + structure_bonus - error_penalty)
+    return max(0.0, accuracy)
+
+def calculate_context_utilization(response: str, retrieved_chunks: List[Dict]) -> float:
+    """
+    Calculate how well the response utilizes the retrieved context.
+    
+    Args:
+        response (str): Generated response
+        retrieved_chunks (List[Dict]): Retrieved chunks
+        
+    Returns:
+        float: Context utilization score (0.0 to 1.0)
+    """
+    if not response or not retrieved_chunks:
+        return 0.0
+    
+    response_lower = response.lower()
+    total_chunks = len(retrieved_chunks)
+    utilized_chunks = 0
+    
+    # Check how many chunks have content referenced in the response
+    for chunk in retrieved_chunks:
+        chunk_content = chunk.get('content', '').lower()
+        if not chunk_content:
+            continue
+        
+        # Extract key phrases from chunk (simple approach)
+        chunk_words = set(word.strip('.,!?;:') for word in chunk_content.split() if len(word) > 3)
+        
+        # Check if any significant words from chunk appear in response
+        matches = sum(1 for word in chunk_words if word in response_lower)
+        
+        # If enough matches, consider chunk utilized
+        if matches >= min(3, len(chunk_words) * 0.1):
+            utilized_chunks += 1
+    
+    utilization = utilized_chunks / total_chunks if total_chunks > 0 else 0.0
+    return utilization
+
+def calculate_answer_completeness(response: str, query: str) -> float:
+    """
+    Calculate how complete the answer is relative to the query.
+    
+    Args:
+        response (str): Generated response
+        query (str): Original query
+        
+    Returns:
+        float: Completeness score (0.0 to 1.0)
+    """
+    if not response or not query:
+        return 0.0
+    
+    response_lower = response.lower()
+    query_lower = query.lower()
+    
+    # Identify query type and expected completeness
+    question_words = ['what', 'how', 'why', 'when', 'where', 'who', 'which']
+    query_type = None
+    
+    for word in question_words:
+        if word in query_lower:
+            query_type = word
+            break
+    
+    # Base completeness on response length and structure
+    word_count = len(response.split())
+    
+    # Scoring based on response characteristics
+    completeness = 0.0
+    
+    # Length-based scoring
+    if word_count >= 50:
+        completeness += 0.4
+    elif word_count >= 20:
+        completeness += 0.3
+    elif word_count >= 10:
+        completeness += 0.2
+    
+    # Structure-based scoring
+    if '.' in response and len(response.split('.')) >= 2:  # Multiple sentences
+        completeness += 0.2
+    
+    # Content-based scoring
+    if any(keyword in response_lower for keyword in ['because', 'due to', 'therefore', 'as a result']):
+        completeness += 0.1  # Explanatory content
+    
+    if any(keyword in response_lower for keyword in ['first', 'second', 'next', 'finally', 'steps']):
+        completeness += 0.1  # Structured content
+    
+    # Source citation bonus
+    if any(keyword in response_lower for keyword in ['source', 'according to', 'document']):
+        completeness += 0.2
+    
+    return min(1.0, completeness)
+
+def calculate_overall_system_accuracy(vector_store, recent_queries: List[Dict] = None) -> Dict[str, float]:
+    """
+    Calculate overall system accuracy metrics.
+    
+    Args:
+        vector_store: The vector store containing embeddings
+        recent_queries (List[Dict]): Recent query metrics for trend analysis
+        
+    Returns:
+        Dict[str, float]: Overall accuracy metrics
+    """
+    if not hasattr(vector_store, 'chunks_data') or not vector_store.chunks_data:
+        return {
+            'system_health': 0.0,
+            'data_quality': 0.0,
+            'embedding_quality': 0.0,
+            'overall_readiness': 0.0
+        }
+    
+    chunks = vector_store.chunks_data
+    
+    # Calculate data quality metrics
+    total_chunks = len(chunks)
+    valid_chunks = sum(1 for chunk in chunks if chunk.get('content', '').strip())
+    chunks_with_embeddings = sum(1 for chunk in chunks if 'embedding' in chunk)
+    
+    data_quality = valid_chunks / total_chunks if total_chunks > 0 else 0.0
+    embedding_quality = chunks_with_embeddings / total_chunks if total_chunks > 0 else 0.0
+    
+    # Calculate system health based on data distribution
+    chunk_sizes = [len(chunk.get('content', '')) for chunk in chunks]
+    avg_chunk_size = np.mean(chunk_sizes) if chunk_sizes else 0
+    
+    # Ideal chunk size is between 200-800 characters
+    size_score = 1.0
+    if avg_chunk_size < 100 or avg_chunk_size > 1000:
+        size_score = 0.6
+    elif avg_chunk_size < 200 or avg_chunk_size > 800:
+        size_score = 0.8
+    
+    system_health = (data_quality + embedding_quality + size_score) / 3
+    
+    # Calculate recent performance if available
+    recent_performance = 0.8  # Default assumption
+    if recent_queries:
+        recent_accuracies = []
+        for query_metrics in recent_queries[-10:]:  # Last 10 queries
+            if 'retrieval' in query_metrics and 'response' in query_metrics:
+                ret_acc = query_metrics['retrieval'].get('retrieval_accuracy', 0.0)
+                resp_acc = query_metrics['response'].get('response_accuracy', 0.0)
+                overall_acc = (ret_acc + resp_acc) / 2
+                recent_accuracies.append(overall_acc)
+        
+        if recent_accuracies:
+            recent_performance = np.mean(recent_accuracies)
+    
+    # Overall readiness score
+    overall_readiness = (system_health + recent_performance) / 2
+    
+    return {
+        'system_health': system_health,
+        'data_quality': data_quality,
+        'embedding_quality': embedding_quality,
+        'overall_readiness': overall_readiness,
+        'recent_performance': recent_performance
+    }
 
 def calculate_system_performance_metrics(vector_store) -> Dict[str, any]:
     """

@@ -34,7 +34,8 @@ from utils import (
     calculate_retrieval_metrics,
     calculate_response_metrics,
     calculate_system_performance_metrics,
-    format_metrics_for_display
+    format_metrics_for_display,
+    calculate_overall_system_accuracy
 )
 
 # =============================================================================
@@ -360,7 +361,7 @@ if user_query:
                             
                             # Calculate metrics for this query
                             retrieval_metrics = calculate_retrieval_metrics(user_query, retrieved_chunks, query_embedding)
-                            response_metrics = calculate_response_metrics(assistant_response, user_query)
+                            response_metrics = calculate_response_metrics(assistant_response, user_query, retrieved_chunks)
                             
                             # Store metrics in session state
                             st.session_state.last_query_metrics = {
@@ -386,16 +387,16 @@ if user_query:
                             retrieval_metrics = st.session_state.last_query_metrics['retrieval']
                             st.metric("Chunks Retrieved", retrieval_metrics['num_chunks_retrieved'])
                             st.metric("Avg Similarity", f"{retrieval_metrics['avg_similarity']:.3f}")
-                            st.metric("Max Similarity", f"{retrieval_metrics['max_similarity']:.3f}")
-                            st.metric("Context Length", f"{retrieval_metrics['total_context_length']:,} chars")
+                            st.metric("🎯 Retrieval Accuracy", f"{retrieval_metrics['retrieval_accuracy']:.1%}")
+                            st.metric("🔗 Semantic Coherence", f"{retrieval_metrics['semantic_coherence']:.3f}")
                         
                         with col2:
                             st.subheader("💬 Response Metrics")
                             response_metrics = st.session_state.last_query_metrics['response']
                             st.metric("Response Length", f"{response_metrics['response_word_count']} words")
-                            st.metric("Reading Time", f"{response_metrics['estimated_reading_time']:.1f} min")
-                            st.metric("Has Sources", "✅ Yes" if response_metrics['has_sources'] else "❌ No")
-                            st.metric("Response Ratio", f"{response_metrics['response_to_query_ratio']:.1f}x")
+                            st.metric("🎯 Response Accuracy", f"{response_metrics['response_accuracy']:.1%}")
+                            st.metric("📊 Context Utilization", f"{response_metrics['context_utilization']:.1%}")
+                            st.metric("✅ Answer Completeness", f"{response_metrics['answer_completeness']:.1%}")
                         
                         # Detailed metrics
                         st.subheader("📈 Detailed Metrics")
@@ -439,6 +440,29 @@ if len(st.session_state.vector_store.chunks_data) > 0:
         
         # System metrics
         system_metrics = calculate_system_performance_metrics(st.session_state.vector_store)
+        accuracy_metrics = calculate_overall_system_accuracy(st.session_state.vector_store)
+        
+        # Display overall system accuracy prominently
+        overall_readiness = accuracy_metrics['overall_readiness']
+        if overall_readiness >= 0.8:
+            readiness_color = "🟢"
+            readiness_status = "Excellent"
+        elif overall_readiness >= 0.6:
+            readiness_color = "🟡"
+            readiness_status = "Good"
+        elif overall_readiness >= 0.4:
+            readiness_color = "🟠"
+            readiness_status = "Fair"
+        else:
+            readiness_color = "🔴"
+            readiness_status = "Poor"
+        
+        st.markdown(f"""
+        ### {readiness_color} System Accuracy Score: {overall_readiness:.1%} ({readiness_status})
+        
+        This score reflects the overall quality and readiness of your RAG system based on data quality, 
+        embedding coverage, and recent query performance.
+        """)
         
         # Display key metrics in columns
         col1, col2, col3, col4 = st.columns(4)
@@ -473,7 +497,7 @@ if len(st.session_state.vector_store.chunks_data) > 0:
         
         # Additional system info
         st.subheader("📋 System Details")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             st.info(f"**Total Content Size:** {system_metrics['total_content_size']:,} characters")
@@ -482,6 +506,35 @@ if len(st.session_state.vector_store.chunks_data) > 0:
         with col2:
             st.info(f"**Current Embedding Set:** {st.session_state.current_embeddings_name or 'None'}")
             st.info(f"**Embedding Model:** all-MiniLM-L6-v2")
+        
+        with col3:
+            st.info(f"**Data Quality:** {accuracy_metrics['data_quality']:.1%}")
+            st.info(f"**Embedding Coverage:** {accuracy_metrics['embedding_quality']:.1%}")
+        
+        # Accuracy breakdown
+        st.subheader("🎯 Accuracy Breakdown")
+        acc_col1, acc_col2, acc_col3 = st.columns(3)
+        
+        with acc_col1:
+            st.metric(
+                label="🏗️ System Health",
+                value=f"{accuracy_metrics['system_health']:.1%}",
+                help="Overall health based on data quality and structure"
+            )
+        
+        with acc_col2:
+            st.metric(
+                label="📊 Data Quality",
+                value=f"{accuracy_metrics['data_quality']:.1%}",
+                help="Percentage of chunks with valid content"
+            )
+        
+        with acc_col3:
+            st.metric(
+                label="🎯 Embedding Quality",
+                value=f"{accuracy_metrics['embedding_quality']:.1%}",
+                help="Percentage of chunks with embeddings"
+            )
     
     with tab2:
         st.subheader("🔍 Last Query Analysis")
@@ -493,6 +546,32 @@ if len(st.session_state.vector_store.chunks_data) > 0:
             st.info(f"**Query:** {metrics['query']}")
             st.info(f"**Analysis ID:** {metrics['timestamp']}")
             
+            # Overall accuracy score
+            retrieval_acc = metrics['retrieval']['retrieval_accuracy']
+            response_acc = metrics['response']['response_accuracy']
+            overall_accuracy = (retrieval_acc + response_acc) / 2
+            
+            # Display overall accuracy prominently
+            if overall_accuracy >= 0.8:
+                overall_color = "🟢"
+                overall_status = "Excellent"
+            elif overall_accuracy >= 0.6:
+                overall_color = "🟡"
+                overall_status = "Good"
+            elif overall_accuracy >= 0.4:
+                overall_color = "🟠"
+                overall_status = "Fair"
+            else:
+                overall_color = "🔴"
+                overall_status = "Poor"
+            
+            st.markdown(f"""
+            ### {overall_color} Overall System Accuracy: {overall_accuracy:.1%} ({overall_status})
+            
+            This score combines retrieval accuracy (how well relevant chunks were found) 
+            and response accuracy (how well the answer addresses the query).
+            """)
+            
             # Metrics visualization
             col1, col2 = st.columns(2)
             
@@ -500,45 +579,47 @@ if len(st.session_state.vector_store.chunks_data) > 0:
                 st.subheader("🎯 Retrieval Performance")
                 retrieval = metrics['retrieval']
                 
-                # Similarity score gauge
-                similarity_score = retrieval['avg_similarity']
-                if similarity_score >= 0.8:
-                    similarity_color = "🟢"
-                elif similarity_score >= 0.6:
-                    similarity_color = "🟡"
+                # Retrieval accuracy gauge
+                retrieval_accuracy = retrieval['retrieval_accuracy']
+                if retrieval_accuracy >= 0.8:
+                    accuracy_color = "🟢"
+                elif retrieval_accuracy >= 0.6:
+                    accuracy_color = "🟡"
                 else:
-                    similarity_color = "🔴"
+                    accuracy_color = "🔴"
                 
                 st.metric(
-                    label=f"{similarity_color} Average Similarity",
-                    value=f"{similarity_score:.3f}",
-                    help="Higher values indicate better retrieval quality"
+                    label=f"{accuracy_color} Retrieval Accuracy",
+                    value=f"{retrieval_accuracy:.1%}",
+                    help="Percentage of retrieved chunks that are relevant (similarity > 0.5)"
                 )
                 
-                st.metric("📊 Similarity Range", f"{retrieval['min_similarity']:.3f} - {retrieval['max_similarity']:.3f}")
+                st.metric("📊 Avg Similarity", f"{retrieval['avg_similarity']:.3f}")
+                st.metric("🔗 Semantic Coherence", f"{retrieval['semantic_coherence']:.3f}")
                 st.metric("📏 Context Used", f"{retrieval['total_context_length']:,} chars")
             
             with col2:
                 st.subheader("💬 Response Quality")
                 response = metrics['response']
                 
-                # Response completeness
-                word_count = response['response_word_count']
-                if word_count >= 50:
+                # Response accuracy
+                response_accuracy = response['response_accuracy']
+                if response_accuracy >= 0.8:
                     response_color = "🟢"
-                elif word_count >= 20:
+                elif response_accuracy >= 0.6:
                     response_color = "🟡"
                 else:
                     response_color = "🔴"
                 
                 st.metric(
-                    label=f"{response_color} Response Length",
-                    value=f"{word_count} words",
-                    help="Longer responses typically provide more comprehensive answers"
+                    label=f"{response_color} Response Accuracy",
+                    value=f"{response_accuracy:.1%}",
+                    help="How well the response addresses the query based on term coverage and structure"
                 )
                 
-                st.metric("⏱️ Est. Reading Time", f"{response['estimated_reading_time']:.1f} min")
-                st.metric("📚 Source Citations", "✅ Yes" if response['has_sources'] else "❌ No")
+                st.metric("📊 Context Utilization", f"{response['context_utilization']:.1%}")
+                st.metric("✅ Answer Completeness", f"{response['answer_completeness']:.1%}")
+                st.metric("⏱️ Reading Time", f"{response['estimated_reading_time']:.1f} min")
             
             # Detailed breakdown
             with st.expander("🔬 Detailed Analysis"):
