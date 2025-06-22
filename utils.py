@@ -37,9 +37,10 @@ DATA_DIR = "data"
 load_dotenv()
 
 # Load Gemini API key from environment variables (security best practice)
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+# Support both GEMINI_API_KEY and GOOGLE_API_KEY for compatibility
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
 if not GEMINI_API_KEY:
-    print("Warning: GEMINI_API_KEY not found in environment variables")
+    print("Warning: GEMINI_API_KEY or GOOGLE_API_KEY not found in environment variables")
     print("Please create a .env file with your Google Gemini API key")
 
 # Configure Google Generative AI with API key
@@ -626,7 +627,7 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
     
     try:
         # Initialize Gemini model
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Format context chunks with source information
         context_text = ""
@@ -661,4 +662,183 @@ Please provide a comprehensive answer based on the context above:"""
             return "Error: Empty response from Gemini API"
             
     except Exception as e:
-        return f"Error generating answer with Gemini: {e}" 
+        return f"Error generating answer with Gemini: {e}"
+
+# =============================================================================
+# METRICS AND EVALUATION FUNCTIONS
+# =============================================================================
+
+def calculate_retrieval_metrics(query: str, retrieved_chunks: List[Dict], query_embedding: np.ndarray) -> Dict[str, float]:
+    """
+    Calculate various retrieval metrics for the RAG system.
+    
+    Args:
+        query (str): The user's query
+        retrieved_chunks (List[Dict]): List of retrieved chunks with embeddings
+        query_embedding (np.ndarray): Embedding of the query
+        
+    Returns:
+        Dict[str, float]: Dictionary containing various metrics
+    """
+    if not retrieved_chunks or query_embedding is None:
+        return {
+            'avg_similarity': 0.0,
+            'max_similarity': 0.0,
+            'min_similarity': 0.0,
+            'similarity_std': 0.0,
+            'num_chunks_retrieved': 0,
+            'avg_chunk_length': 0.0,
+            'total_context_length': 0
+        }
+    
+    # Calculate similarity scores
+    similarities = []
+    chunk_lengths = []
+    total_context_length = 0
+    
+    for chunk in retrieved_chunks:
+        if 'embedding' in chunk:
+            chunk_embedding = np.array(chunk['embedding'])
+            similarity = cosine_similarity([query_embedding], [chunk_embedding])[0][0]
+            similarities.append(similarity)
+        
+        chunk_length = len(chunk.get('content', ''))
+        chunk_lengths.append(chunk_length)
+        total_context_length += chunk_length
+    
+    # Calculate metrics
+    metrics = {
+        'avg_similarity': np.mean(similarities) if similarities else 0.0,
+        'max_similarity': np.max(similarities) if similarities else 0.0,
+        'min_similarity': np.min(similarities) if similarities else 0.0,
+        'similarity_std': np.std(similarities) if similarities else 0.0,
+        'num_chunks_retrieved': len(retrieved_chunks),
+        'avg_chunk_length': np.mean(chunk_lengths) if chunk_lengths else 0.0,
+        'total_context_length': total_context_length
+    }
+    
+    return metrics
+
+def calculate_response_metrics(response: str, query: str) -> Dict[str, any]:
+    """
+    Calculate metrics for the generated response.
+    
+    Args:
+        response (str): Generated response
+        query (str): Original query
+        
+    Returns:
+        Dict[str, any]: Dictionary containing response metrics
+    """
+    if not response or not query:
+        return {
+            'response_length': 0,
+            'response_word_count': 0,
+            'query_length': 0,
+            'query_word_count': 0,
+            'response_to_query_ratio': 0.0,
+            'has_sources': False,
+            'estimated_reading_time': 0.0
+        }
+    
+    # Basic text metrics
+    response_length = len(response)
+    response_words = len(response.split())
+    query_length = len(query)
+    query_words = len(query.split())
+    
+    # Check if response contains source citations
+    has_sources = any(keyword in response.lower() for keyword in ['source', 'file:', 'chunk', 'document'])
+    
+    # Estimated reading time (average 200 words per minute)
+    reading_time = response_words / 200.0
+    
+    metrics = {
+        'response_length': response_length,
+        'response_word_count': response_words,
+        'query_length': query_length,
+        'query_word_count': query_words,
+        'response_to_query_ratio': response_length / query_length if query_length > 0 else 0.0,
+        'has_sources': has_sources,
+        'estimated_reading_time': reading_time
+    }
+    
+    return metrics
+
+def calculate_system_performance_metrics(vector_store) -> Dict[str, any]:
+    """
+    Calculate overall system performance metrics.
+    
+    Args:
+        vector_store: The vector store containing embeddings
+        
+    Returns:
+        Dict[str, any]: Dictionary containing system metrics
+    """
+    if not hasattr(vector_store, 'chunks_data') or not vector_store.chunks_data:
+        return {
+            'total_documents': 0,
+            'total_chunks': 0,
+            'avg_chunk_size': 0.0,
+            'total_content_size': 0,
+            'unique_sources': 0,
+            'embedding_dimensions': 0
+        }
+    
+    chunks = vector_store.chunks_data
+    
+    # Calculate metrics
+    total_chunks = len(chunks)
+    chunk_sizes = [len(chunk.get('content', '')) for chunk in chunks]
+    total_content_size = sum(chunk_sizes)
+    unique_sources = len(set(chunk.get('source', 'unknown') for chunk in chunks))
+    
+    # Get embedding dimensions
+    embedding_dims = 0
+    if chunks and 'embedding' in chunks[0]:
+        embedding_dims = len(chunks[0]['embedding'])
+    
+    # Count unique documents
+    unique_docs = len(set(chunk.get('doc_id', 'unknown') for chunk in chunks))
+    
+    metrics = {
+        'total_documents': unique_docs,
+        'total_chunks': total_chunks,
+        'avg_chunk_size': np.mean(chunk_sizes) if chunk_sizes else 0.0,
+        'total_content_size': total_content_size,
+        'unique_sources': unique_sources,
+        'embedding_dimensions': embedding_dims
+    }
+    
+    return metrics
+
+def format_metrics_for_display(metrics: Dict[str, any]) -> str:
+    """
+    Format metrics dictionary for display in Streamlit.
+    
+    Args:
+        metrics (Dict[str, any]): Metrics dictionary
+        
+    Returns:
+        str: Formatted metrics string
+    """
+    formatted_lines = []
+    
+    for key, value in metrics.items():
+        # Format key (convert snake_case to Title Case)
+        formatted_key = key.replace('_', ' ').title()
+        
+        # Format value based on type
+        if isinstance(value, float):
+            if 0 < value < 1:
+                formatted_value = f"{value:.3f}"
+            else:
+                formatted_value = f"{value:.2f}"
+        elif isinstance(value, bool):
+            formatted_value = "✅ Yes" if value else "❌ No"
+        else:
+            formatted_value = str(value)
+        
+        formatted_lines.append(f"**{formatted_key}:** {formatted_value}")
+    
+    return "\n".join(formatted_lines)
