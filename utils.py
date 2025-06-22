@@ -37,9 +37,10 @@ DATA_DIR = "data"
 load_dotenv()
 
 # Load Gemini API key from environment variables (security best practice)
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+# Support both GEMINI_API_KEY and GOOGLE_API_KEY for compatibility
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
 if not GEMINI_API_KEY:
-    print("Warning: GEMINI_API_KEY not found in environment variables")
+    print("Warning: GEMINI_API_KEY or GOOGLE_API_KEY not found in environment variables")
     print("Please create a .env file with your Google Gemini API key")
 
 # Configure Google Generative AI with API key
@@ -626,7 +627,7 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
     
     try:
         # Initialize Gemini model
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         # Format context chunks with source information
         context_text = ""
@@ -661,4 +662,91 @@ Please provide a comprehensive answer based on the context above:"""
             return "Error: Empty response from Gemini API"
             
     except Exception as e:
-        return f"Error generating answer with Gemini: {e}" 
+        return f"Error generating answer with Gemini: {e}"
+
+# =============================================================================
+# API KEY VALIDATION FUNCTIONS
+# =============================================================================
+
+def test_gemini_api_key() -> Tuple[bool, str]:
+    """
+    Tests if the Gemini API key is working properly.
+    
+    This function performs a simple API call to verify that the API key is valid
+    and the connection to Google Gemini is working correctly.
+    
+    Returns:
+        Tuple[bool, str]: 
+            - First element: True if API key is working, False otherwise
+            - Second element: Status message or error description
+            
+    Example:
+        >>> is_working, message = test_gemini_api_key()
+        >>> if is_working:
+        ...     print("API key is working!")
+        ... else:
+        ...     print(f"API key issue: {message}")
+    """
+    # Check if API key is configured
+    if not GEMINI_API_KEY:
+        return False, "API key not found. Please check your .env file and ensure GEMINI_API_KEY or GOOGLE_API_KEY is set."
+    
+    try:
+        # Initialize Gemini model
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Simple test prompt to verify API connectivity
+        test_prompt = "Respond with exactly: 'API test successful'"
+        response = model.generate_content(test_prompt)
+        
+        # Check if response is valid
+        if response and response.text:
+            return True, f"✅ API key is working! Test response: {response.text.strip()}"
+        else:
+            return False, "❌ API key configured but received empty response from Gemini"
+            
+    except Exception as e:
+        error_msg = str(e)
+        
+        # Provide specific error messages for common issues
+        if "API_KEY_INVALID" in error_msg or "invalid" in error_msg.lower():
+            return False, "❌ Invalid API key. Please check your API key in the .env file."
+        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+            return False, "❌ API quota exceeded. Please check your Google Cloud billing and quotas."
+        elif "permission" in error_msg.lower() or "forbidden" in error_msg.lower():
+            return False, "❌ Permission denied. Please ensure your API key has access to Gemini API."
+        elif "network" in error_msg.lower() or "connection" in error_msg.lower():
+            return False, "❌ Network error. Please check your internet connection."
+        else:
+            return False, f"❌ API test failed: {error_msg}"
+
+def get_api_key_status() -> Dict[str, any]:
+    """
+    Returns comprehensive status information about the API key configuration.
+    
+    Returns:
+        Dict[str, any]: Dictionary containing API key status information
+        
+    Example:
+        >>> status = get_api_key_status()
+        >>> print(f"API Key Present: {status['api_key_present']}")
+        >>> print(f"Status: {status['status_message']}")
+    """
+    status = {
+        'api_key_present': GEMINI_API_KEY is not None,
+        'api_key_length': len(GEMINI_API_KEY) if GEMINI_API_KEY else 0,
+        'api_key_masked': f"{GEMINI_API_KEY[:8]}...{GEMINI_API_KEY[-4:]}" if GEMINI_API_KEY and len(GEMINI_API_KEY) > 12 else "Not available",
+        'genai_configured': GEMINI_API_KEY is not None,
+        'test_result': None,
+        'status_message': ""
+    }
+    
+    # Test API key if present
+    if GEMINI_API_KEY:
+        is_working, message = test_gemini_api_key()
+        status['test_result'] = is_working
+        status['status_message'] = message
+    else:
+        status['status_message'] = "❌ No API key found in environment variables"
+    
+    return status

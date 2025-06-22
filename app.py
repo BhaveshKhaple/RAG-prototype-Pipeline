@@ -30,7 +30,9 @@ from utils import (
     load_embeddings, 
     get_available_embedding_sets, 
     generate_answer_with_gemini,
-    embedding_model
+    embedding_model,
+    get_api_key_status,
+    test_gemini_api_key
 )
 
 # =============================================================================
@@ -254,6 +256,45 @@ with st.sidebar:
     # Reiterate embedding model status
     if not st.session_state.embedding_model_loaded:
         st.error("❌ Embedding model not loaded - functionality limited.")
+    
+    st.divider()
+    
+    # =====================================================================
+    # API KEY STATUS SECTION
+    # =====================================================================
+    
+    st.subheader("🔑 API Key Status")
+    
+    # Get API key status
+    api_status = get_api_key_status()
+    
+    if api_status['api_key_present']:
+        st.success(f"✅ API Key: {api_status['api_key_masked']}")
+        
+        # Test API key button
+        if st.button("Test API Key", help="Click to test if your API key is working"):
+            with st.spinner("Testing API key..."):
+                is_working, message = test_gemini_api_key()
+                if is_working:
+                    st.success(message)
+                else:
+                    st.error(message)
+                    st.info("💡 **Troubleshooting:** Check your .env file and ensure your API key is valid.")
+    else:
+        st.error("❌ No API key found")
+        st.info("💡 **Setup:** Create a .env file with GOOGLE_API_KEY or GEMINI_API_KEY")
+        
+        # Show setup instructions
+        with st.expander("📝 Setup Instructions"):
+            st.markdown("""
+            1. Create a `.env` file in the project directory
+            2. Add your Google Gemini API key:
+               ```
+               GOOGLE_API_KEY=your_actual_api_key_here
+               ```
+            3. Get your API key from: [Google AI Studio](https://makersuite.google.com/app/apikey)
+            4. Restart the application after adding the API key
+            """)
 
 # =============================================================================
 # MAIN CHAT INTERFACE
