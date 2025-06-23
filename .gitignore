@@ -1,5 +1,5 @@
-.env
+
 /rag
 /_pycache
 /__pycache__
-.streamlit
+venv/.streamlit/secrets.toml 
