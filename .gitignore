@@ -2,4 +2,4 @@
 /rag
 /_pycache
 /__pycache__
-venv/
+venv/.streamlit/secrets.toml 
