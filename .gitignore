@@ -2,7 +2,7 @@
 /rag
 /_pycache
 /__pycache__
-
+.streamlit
 # Ignore common OS-specific files
 .DS_Store
 Thumbs.db
