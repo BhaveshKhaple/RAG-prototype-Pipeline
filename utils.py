@@ -591,76 +591,59 @@ class InMemoryVectorStore:
 
 def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
     """
-    Generates a context-rich answer using Google Gemini with source citations.
-    
-    This function constructs a comprehensive prompt that includes the user's
-    question and relevant context chunks. It uses Google Gemini to generate
-    an answer that cites specific sources from the provided context.
-    
-    Args:
-        query (str): User's question to be answered
-        context_chunks (List[Dict]): Retrieved context chunks with metadata
-        
-    Returns:
-        str: Generated answer text or error message
-        
-    Note:
-        - Requires valid GEMINI_API_KEY in environment variables
-        - Constructs detailed prompt with source citations
-        - Handles API errors gracefully
-        - Returns user-friendly error messages
-        
-    Example:
-        >>> answer = generate_answer_with_gemini("What is AI?", context_chunks)
-        >>> print(answer)
+    Generates a context-rich answer using Google Gemini without exposing chunk IDs.
     """
-    # Check for GEMINI_API_KEY configuration
+
     if not GEMINI_API_KEY:
-        return "Error: GEMINI_API_KEY not configured. Please check your .env file."
-    
-    # Validate input parameters
+        return "Error: GEMINI_API_KEY not configured. Please check your .env or secrets.toml file."
+
     if not query or not query.strip():
         return "Error: Query cannot be empty"
-    
+
     if not context_chunks:
         return "I couldn't find any relevant information in the loaded documents to answer your question."
-    
+
     try:
-        # Initialize Gemini model
+        import re
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Format context chunks with source information
+
+        # 🧹 Clean and format context (no chunk ID)
         context_text = ""
         for i, chunk in enumerate(context_chunks, 1):
-            context_text += f"Source {i} (File: {chunk['source']}, Chunk ID: {chunk['chunk_id']}):\n"
-            context_text += f"{chunk['content']}\n\n"
-        
-        # Construct comprehensive prompt with clear instructions
+            # Optional: keep file name only
+            filename = chunk.get('source', 'Unknown Source')
+            content = chunk.get('content', '')
+
+            # Clean chunk ID reference (in case it’s in content)
+            cleaned_content = re.sub(r'chunk ID: [a-f0-9]{64}', '', content)
+
+            context_text += f"Source {i} (File: {filename}):\n"
+            context_text += f"{cleaned_content.strip()}\n\n"
+
+        # 📜 Prompt to Gemini
         prompt = f"""You are a helpful assistant that answers questions based on the provided context.
 
 Instructions:
 1. Answer the question using ONLY the information provided in the context below.
 2. If the context doesn't contain enough information to answer the question, say so clearly.
-3. Cite your sources by mentioning the filename and chunk ID when referencing information.
-4. Provide a comprehensive and accurate answer based on the available context.
-5. If the question is ambiguous, ask for clarification.
+3. Cite your sources by filename only when relevant.
+4. Provide a clear and accurate explanation without including technical metadata like chunk IDs.
 
 User Question: {query}
 
 Context:
 {context_text}
 
-Please provide a comprehensive answer based on the context above:"""
-        
-        # Generate response using Gemini API
+Answer:"""
+
+        # 🧠 Get answer from Gemini
         response = model.generate_content(prompt)
-        
-        # Validate and return response
+
         if response and response.text:
-            return response.text
+            return response.text.strip()
         else:
             return "Error: Empty response from Gemini API"
-            
+
     except Exception as e:
         return f"Error generating answer with Gemini: {e}"
 

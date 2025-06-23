@@ -46,7 +46,7 @@ import google.generativeai as genai
 
 # Access the Google AI API key from Streamlit secrets
 try:
-    GOOGLE_AI_API_KEY = st.secrets["GOOGLE_AI_API_KEY"]
+    GOOGLE_AI_API_KEY = st.secrets["GEMINI_API_KEY"]
     # Configure the Google Generative AI library
     genai.configure(api_key=GOOGLE_AI_API_KEY)
 except KeyError:
