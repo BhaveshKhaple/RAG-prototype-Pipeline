@@ -632,8 +632,8 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
         # Format context chunks with source information
         context_text = ""
         for i, chunk in enumerate(context_chunks, 1):
-            context_text += f"Source {i} (File: {chunk['source']}, Chunk ID: {chunk['chunk_id']}):\n"
-            context_text += f"{chunk['content']}\n\n"
+            context_text += f"Source {i} (File: {chunk['source']}):\n"
+
         
         # Construct comprehensive prompt with clear instructions
         prompt = f"""You are a helpful assistant that answers questions based on the provided context.
