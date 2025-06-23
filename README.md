@@ -5,6 +5,8 @@ A complete Retrieval-Augmented Generation (RAG) pipeline prototype that allows y
 ## 🚀 Quick Start
 
 For detailed setup instructions, see [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md).
+check version2 branch for all deployments errors
+
 
 ### Quick Setup (3 steps):
 
