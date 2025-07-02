@@ -276,58 +276,49 @@ def generate_embeddings(chunks: List[Dict]) -> List[Dict]:
 def save_embeddings(embeddings: List[Dict], storage_name: str) -> Tuple[bool, Optional[str]]:
     """
     Persistently saves a list of embedding-chunk dictionaries to disk.
-    
-    This function ensures the embeddings directory exists and saves the data
-    using pickle format for efficient storage and retrieval. It provides
-    comprehensive error handling for file operations.
-    
+
+    Ensures each chunk contains required fields and adds default 'chapter' if missing.
+    Saves data using pickle format into the embeddings/ directory.
+
     Args:
         embeddings (List[Dict]): List of chunk dictionaries with embeddings
         storage_name (str): Name for the storage file (without extension)
-        
+
     Returns:
         Tuple[bool, Optional[str]]: 
-            - First element: True if successful, False otherwise
-            - Second element: Error message if failed, None if successful
-            
-    Note:
-        - Files are saved in the embeddings/ directory
-        - Storage name should be alphanumeric and safe for filenames
-        - Data is serialized using pickle for efficiency
-        
-    Example:
-        >>> success, error = save_embeddings(chunks, "my_documents")
-        >>> if success:
-        ...     print("Embeddings saved successfully")
-        ... else:
-        ...     print(f"Error: {error}")
+            - True and None if successful
+            - False and error message if failed
     """
     try:
-        # Validate input parameters
+        # Validate inputs
         if not embeddings:
             return False, "No embeddings provided for saving"
-        
         if not storage_name or not storage_name.strip():
             return False, "Storage name cannot be empty"
-        
-        # Sanitize storage name for filename safety
+
+        # Sanitize filename
         safe_name = "".join(c for c in storage_name if c.isalnum() or c in ('-', '_')).rstrip()
         if not safe_name:
             return False, "Storage name contains no valid characters"
-        
+
         # Ensure embeddings directory exists
         os.makedirs(EMBEDDINGS_DIR, exist_ok=True)
-        
-        # Create file path
+
+        # Set default chapter if missing
+        for chunk in embeddings:
+            if "embedding" in chunk and "content" in chunk:
+                chunk.setdefault("chapter", "Unknown")
+            else:
+                print("⚠️ Invalid chunk (missing 'content' or 'embedding'):", chunk)
+
+        # Save to pickle
         file_path = os.path.join(EMBEDDINGS_DIR, f"{safe_name}.pkl")
-        
-        # Save to pickle file with error handling
         with open(file_path, 'wb') as f:
             pickle.dump(embeddings, f)
-        
+
         print(f"✅ Embeddings saved to {file_path}")
         return True, None
-        
+
     except PermissionError:
         error_msg = f"Permission denied: Cannot write to {EMBEDDINGS_DIR}"
         print(f"❌ {error_msg}")
@@ -336,6 +327,8 @@ def save_embeddings(embeddings: List[Dict], storage_name: str) -> Tuple[bool, Op
         error_msg = f"Error saving embeddings: {e}"
         print(f"❌ {error_msg}")
         return False, error_msg
+
+        
 
 def load_embeddings(storage_name: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
     """
@@ -588,81 +581,67 @@ class InMemoryVectorStore:
 # =============================================================================
 # GEMINI INTEGRATION FUNCTION
 # =============================================================================
-
 def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
     """
-    Generates a context-rich answer using Google Gemini with source citations.
-    
-    This function constructs a comprehensive prompt that includes the user's
-    question and relevant context chunks. It uses Google Gemini to generate
-    an answer that cites specific sources from the provided context.
-    
-    Args:
-        query (str): User's question to be answered
-        context_chunks (List[Dict]): Retrieved context chunks with metadata
-        
-    Returns:
-        str: Generated answer text or error message
-        
-    Note:
-        - Requires valid GEMINI_API_KEY in environment variables
-        - Constructs detailed prompt with source citations
-        - Handles API errors gracefully
-        - Returns user-friendly error messages
-        
-    Example:
-        >>> answer = generate_answer_with_gemini("What is AI?", context_chunks)
-        >>> print(answer)
+    All-rounder Gemini RAG function that:
+    - Answers questions
+    - Summarizes chapters or topics
+    - Extracts structured data
+    - Infers missing context when needed
+    - Responds like ChatGPT (bullets, examples, flow)
     """
-    # Check for GEMINI_API_KEY configuration
+
     if not GEMINI_API_KEY:
         return "Error: GEMINI_API_KEY not configured. Please check your .env file."
-    
-    # Validate input parameters
+
     if not query or not query.strip():
-        return "Error: Query cannot be empty"
-    
-    if not context_chunks:
-        return "I couldn't find any relevant information in the loaded documents to answer your question."
-    
+        return "Error: Query cannot be empty."
+
     try:
-        # Initialize Gemini model
         model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Format context chunks with source information
+
+        # Format context (no chunk IDs)
         context_text = ""
         for i, chunk in enumerate(context_chunks, 1):
             context_text += f"Source {i} (File: {chunk['source']}):\n"
+            context_text += f"{chunk['content']}\n\n"
 
-        
-        # Construct comprehensive prompt with clear instructions
-        prompt = f"""You are a helpful assistant that answers questions based on the provided context.
+        # Enhanced prompt with reasoning and format instructions
+        prompt = f"""
+You are a smart, structured, human-like AI assistant trained to answer questions about uploaded documents (PDF/TXT), summarize chapters, and reason based on both the document and your ML knowledge.
 
-Instructions:
-1. Answer the question using ONLY the information provided in the context below.
-2. If the context doesn't contain enough information to answer the question, say so clearly.
-3. Cite your sources by mentioning the filename and chunk ID when referencing information.
-4. Provide a comprehensive and accurate answer based on the available context.
-5. If the question is ambiguous, ask for clarification.
+📌 Instructions:
+1. If the user asks to summarize a chapter (e.g., "Chapter 1"), and the content contains **section titles or paragraph-level info**, assume it's the correct chapter — even if “Chapter 1” isn’t explicitly labeled.
+2. If the user asks for a chapter not in the document (e.g., “Chapter 40”), politely say it’s missing.
+3. When you do find relevant context, write a **rich summary** using:
+   - Headings (bold)
+   - Bullet points
+   - Key takeaways or examples
+4. If context is vague or weak, still attempt a short answer — don’t refuse unless content is 100% unrelated.
+5. Avoid phrases like “the provided text does not include...” when you clearly have some useful content.
 
-User Question: {query}
+📄 Document Context:
+{context_text if context_chunks else "No relevant chunks found."}
 
-Context:
-{context_text}
+💬 User Query:
+{query}
 
-Please provide a comprehensive answer based on the context above:"""
-        
-        # Generate response using Gemini API
+✍️ Answer in a helpful, structured, and confident way like ChatGPT:
+"""
+
+
+
         response = model.generate_content(prompt)
-        
-        # Validate and return response
+
         if response and response.text:
-            return response.text
+            return response.text.strip()
         else:
-            return "Error: Empty response from Gemini API"
-            
+            return "Error: Empty response from Gemini API."
+
     except Exception as e:
         return f"Error generating answer with Gemini: {e}"
+
+
 
 # =============================================================================
 # METRICS AND EVALUATION FUNCTIONS
