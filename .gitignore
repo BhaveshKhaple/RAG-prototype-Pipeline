@@ -1,5 +1,8 @@
 .env
-/rag
-/_pycache
-/__pycache__
-.streamlit
+.streamlit/
+.streamlit/secrets.toml
+venv/
+__pycache__/
+
+*.pkl
+embeddings/
