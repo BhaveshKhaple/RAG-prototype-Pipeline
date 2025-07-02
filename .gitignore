@@ -21,7 +21,7 @@ __pycache__/
 *.pyo
 .ipynb_checkpoints/  # Jupyter Notebook checkpoints
 venv/                # Virtual environments
-env/                 # Another common name for virtual environments
+.env/                 # Another common name for virtual environments
 *.egg-info/
 .pytest_cache/
 

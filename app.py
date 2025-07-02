@@ -35,23 +35,26 @@ from utils import (
     calculate_response_metrics,
     calculate_system_performance_metrics,
     format_metrics_for_display,
-    calculate_overall_system_accuracy
+    calculate_overall_system_accuracy,
+    iterative_summarize_chunks,
+    group_and_summarize,
+    load_summary_cache,
+    save_summary_cache
 )
 
 # =============================================================================
-# GOOGLE AI API KEY CONFIGURATION (NEW ADDITION)
+# GOOGLE AI API KEY CONFIGURATION (UPDATED)
 # =============================================================================
 
 import google.generativeai as genai
 
-# Access the Google AI API key from Streamlit secrets
+# Load Gemini API key from environment variables (not Streamlit secrets)
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY') or os.getenv('GOOGLE_API_KEY')
+if not GEMINI_API_KEY:
+    st.error("Google Gemini API Key not found in environment variables. Please ensure 'GEMINI_API_KEY' or 'GOOGLE_API_KEY' is set in your .env file.")
+    st.stop()
 try:
-    GOOGLE_AI_API_KEY = st.secrets["GOOGLE_AI_API_KEY"]
-    # Configure the Google Generative AI library
-    genai.configure(api_key=GOOGLE_AI_API_KEY)
-except KeyError:
-    st.error("Google AI API Key not found in Streamlit secrets. Please ensure 'GOOGLE_AI_API_KEY' is set in your app's secrets.")
-    st.stop() # Stop the app if the key is not available, as core functionality depends on it.
+    genai.configure(api_key=GEMINI_API_KEY)
 except Exception as e:
     st.error(f"Error configuring Google Generative AI: {e}")
     st.stop()
@@ -187,13 +190,13 @@ with st.sidebar:
                         doc_id = str(uuid.uuid4())
 
                         # Load document content with error handling
-                        text, error = load_document(temp_file_path)
+                        text, structured_pages, error = load_document(temp_file_path)
                         if error:
                             st.error(f"Error loading {uploaded_file.name}: {error}")
                             continue
 
-                        # Chunk the document into manageable pieces
-                        chunks = chunk_document(text, doc_id, uploaded_file.name)
+                        # Chunk the document into manageable pieces, passing structured_pages
+                        chunks = chunk_document(text, doc_id, uploaded_file.name, structured_pages=structured_pages)
 
                         # Generate embeddings for the chunks
                         # This `generate_embeddings` function in utils.py needs to use the configured genai.
@@ -321,6 +324,12 @@ with st.sidebar:
     else:
         st.info("No documents loaded - metrics unavailable")
 
+    st.subheader("Retrieval Settings")
+    context_depth = st.slider("Context Depth (k)", min_value=3, max_value=30, value=7, help="Number of chunks to retrieve for each query.")
+    st.subheader("Summarization")
+    summarize_chapters_button = st.button("Summarize All Chapters", disabled=len(st.session_state.vector_store.chunks_data) == 0)
+    summarize_sections_button = st.button("Summarize All Sections", disabled=len(st.session_state.vector_store.chunks_data) == 0)
+
 # =============================================================================
 # MAIN CHAT INTERFACE
 # =============================================================================
@@ -381,8 +390,16 @@ if user_query:
                         st.error(f"Error generating query embedding: {e}")
                         assistant_response = "Sorry, I encountered an error while processing your question."
                     else:
-                        # Search for relevant chunks using cosine similarity
-                        retrieved_chunks = st.session_state.vector_store.search(query_embedding, k=5)
+                        # Enhanced adaptive retrieval: use larger k for broad/complex queries
+                        broad_keywords = [
+                            'summarize', 'overview', 'all', 'chapter', 'section',
+                            'explain', 'describe', 'how does', 'what is', 'deep dive'
+                        ]
+                        if any(word in user_query.lower() for word in broad_keywords):
+                            k_value = max(context_depth, 15)
+                        else:
+                            k_value = context_depth
+                        retrieved_chunks = st.session_state.vector_store.search(query_embedding, k=k_value)
 
                         if retrieved_chunks:
                             # Generate answer using Gemini with context
@@ -672,3 +689,108 @@ if len(st.session_state.vector_store.chunks_data) > 0:
 
 else:
     st.info("📊 **Metrics Dashboard:** Upload and process documents to see performance metrics and analytics.")
+
+if summarize_chapters_button:
+    summary_prompt = "Summarize the following chapter in detail, highlighting all key points, sections, and important information."
+    # Group by chapter_title and doc_id
+    from collections import defaultdict
+    chapter_map = defaultdict(list)
+    for chunk in st.session_state.vector_store.chunks_data:
+        chapter = chunk.get('chapter_title') or 'Unknown Chapter'
+        doc_id = chunk.get('doc_id')
+        chapter_map[(doc_id, chapter)].append(chunk)
+    summaries = {}
+    for (doc_id, chapter), group_chunks in chapter_map.items():
+        cached = load_summary_cache(doc_id, chapter, group_type='chapter')
+        if cached:
+            summary = cached
+        else:
+            summary = iterative_summarize_chunks(group_chunks, summary_prompt, prompt_type='summarize_chapter')
+            save_summary_cache(doc_id, chapter, summary, group_type='chapter')
+        summaries[chapter] = {
+            'summary': summary,
+            'chunks': [
+                {
+                    'page_number': c.get('page_number'),
+                    'start': c['content'][:60] + ('...' if len(c['content']) > 60 else ''),
+                    'chunk_index': c.get('chunk_index')
+                }
+                for c in group_chunks
+            ]
+        }
+    st.session_state.chapter_summaries = summaries
+
+if summarize_sections_button:
+    summary_prompt = "Summarize the following section in detail, highlighting all key points and important information."
+    from collections import defaultdict
+    section_map = defaultdict(list)
+    for chunk in st.session_state.vector_store.chunks_data:
+        section = chunk.get('section_title') or 'Unknown Section'
+        doc_id = chunk.get('doc_id')
+        section_map[(doc_id, section)].append(chunk)
+    summaries = {}
+    for (doc_id, section), group_chunks in section_map.items():
+        cached = load_summary_cache(doc_id, section, group_type='section')
+        if cached:
+            summary = cached
+        else:
+            summary = iterative_summarize_chunks(group_chunks, summary_prompt, prompt_type='summarize_chapter')
+            save_summary_cache(doc_id, section, summary, group_type='section')
+        summaries[section] = {
+            'summary': summary,
+            'chunks': [
+                {
+                    'page_number': c.get('page_number'),
+                    'start': c['content'][:60] + ('...' if len(c['content']) > 60 else ''),
+                    'chunk_index': c.get('chunk_index')
+                }
+                for c in group_chunks
+            ]
+        }
+    st.session_state.section_summaries = summaries
+
+if 'chapter_summaries' not in st.session_state:
+    st.session_state.chapter_summaries = None
+if 'section_summaries' not in st.session_state:
+    st.session_state.section_summaries = None
+
+if st.session_state.chapter_summaries or st.session_state.section_summaries:
+    tab1, tab2 = st.tabs(["Chapter Summaries", "Section Summaries"])
+    with tab1:
+        st.header("📖 Chapter Summaries")
+        for chapter, data in (st.session_state.chapter_summaries or {}).items():
+            with st.expander(f"{chapter}"):
+                summary = data['summary'] if isinstance(data, dict) else data
+                st.markdown(summary)
+                if isinstance(data, dict) and 'chunks' in data:
+                    with st.expander('Show Source Chunks'):
+                        for chunk in data['chunks']:
+                            st.markdown(
+                                f"- **Page:** {chunk['page_number']} | **Chunk:** {chunk['chunk_index']} | _{chunk['start']}_"
+                            )
+                if not summary or 'error' in summary.lower() or 'no content' in summary.lower():
+                    if st.button(f"Retry {chapter}"):
+                        summary_prompt = "Summarize the following chapter in detail, highlighting all key points, sections, and important information."
+                        st.session_state.chapter_summaries[chapter] = iterative_summarize_chunks(
+                            [c for c in st.session_state.vector_store.chunks_data if c.get('chapter_title') == chapter],
+                            summary_prompt
+                        )
+    with tab2:
+        st.header("📑 Section Summaries")
+        for section, data in (st.session_state.section_summaries or {}).items():
+            with st.expander(f"{section}"):
+                summary = data['summary'] if isinstance(data, dict) else data
+                st.markdown(summary)
+                if isinstance(data, dict) and 'chunks' in data:
+                    with st.expander('Show Source Chunks'):
+                        for chunk in data['chunks']:
+                            st.markdown(
+                                f"- **Page:** {chunk['page_number']} | **Chunk:** {chunk['chunk_index']} | _{chunk['start']}_"
+                            )
+                if not summary or 'error' in summary.lower() or 'no content' in summary.lower():
+                    if st.button(f"Retry {section}"):
+                        summary_prompt = "Summarize the following section in detail, highlighting all key points and important information."
+                        st.session_state.section_summaries[section] = iterative_summarize_chunks(
+                            [c for c in st.session_state.vector_store.chunks_data if c.get('section_title') == section],
+                            summary_prompt
+                        )
