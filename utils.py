@@ -24,6 +24,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import google.generativeai as genai
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import PyPDF2
+import re
+import unicodedata
 
 # =============================================================================
 # CONFIGURATION AND CONSTANTS
@@ -58,152 +60,164 @@ except Exception as e:
     embedding_model = None
 
 # =============================================================================
+# TEXT NORMALIZATION FUNCTION (NEW)
+# =============================================================================
+def normalize_text(text: str) -> str:
+    """
+    Normalize text for improved embedding accuracy.
+    - Lowercase
+    - Unicode normalization
+    - Remove extra whitespace
+    - Remove non-informative characters (except basic punctuation)
+    """
+    if not text:
+        return ""
+    # Unicode normalization
+    text = unicodedata.normalize('NFKC', text)
+    # Lowercase
+    text = text.lower()
+    # Remove non-informative characters (keep basic punctuation)
+    text = re.sub(r"[^\w\s.,;:!?()\[\]'-]", "", text)
+    # Collapse multiple spaces/newlines
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+# =============================================================================
 # DOCUMENT PROCESSING FUNCTIONS
 # =============================================================================
 
-def load_document(file_path: str) -> Tuple[Optional[str], Optional[str]]:
+# Helper for PDF chapter/section detection
+def extract_pdf_structure(pages_text: list) -> list:
+    """
+    Given a list of (page_num, page_text), return a list of dicts with page_text, chapter_title, section_title.
+    Uses regex to detect chapter/section headings (e.g., '1 Title', '2.1 Subsection').
+    """
+    structure = []
+    current_chapter = None
+    current_section = None
+    chapter_pattern = re.compile(r"^(\d+)\s+(.+)", re.MULTILINE)
+    section_pattern = re.compile(r"^(\d+\.\d+)\s+(.+)", re.MULTILINE)
+    for page_num, page_text in pages_text:
+        chapter_found = chapter_pattern.findall(page_text)
+        section_found = section_pattern.findall(page_text)
+        # Use the last match on the page (if multiple headings)
+        if chapter_found:
+            current_chapter = f"{chapter_found[-1][0]} {chapter_found[-1][1].strip()}"
+        if section_found:
+            current_section = f"{section_found[-1][0]} {section_found[-1][1].strip()}"
+        structure.append({
+            'page_num': page_num,
+            'page_text': page_text,
+            'chapter_title': current_chapter,
+            'section_title': current_section
+        })
+    return structure
+
+def load_document(file_path: str) -> Tuple[Optional[str], Optional[list], Optional[str]]:
     """
     Loads text content from PDF or TXT files with comprehensive error handling.
-    
-    This function supports multiple file formats and provides detailed error messages
-    for troubleshooting. It uses PyPDF2 for PDF processing and direct text reading
-    for TXT files.
-    
-    Args:
-        file_path (str): Path to the document file to be processed
-        
-    Returns:
-        Tuple[Optional[str], Optional[str]]: 
-            - First element: Extracted text content (None if error)
-            - Second element: Error message (None if successful)
-            
-    Raises:
-        FileNotFoundError: If the specified file doesn't exist
-        PermissionError: If the file cannot be accessed due to permissions
-        
-    Example:
-        >>> text, error = load_document("data/sample.pdf")
-        >>> if error:
-        ...     print(f"Error: {error}")
-        ... else:
-        ...     print(f"Successfully loaded {len(text)} characters")
+    Returns (full_text, structured_pages, error)
+    structured_pages is a list of dicts with page_text, chapter_title, section_title.
     """
     try:
         # Validate file existence
         if not os.path.exists(file_path):
-            return None, f"File not found: {file_path}"
-        
+            return None, None, f"File not found: {file_path}"
         # Check file permissions
         if not os.access(file_path, os.R_OK):
-            return None, f"Permission denied: Cannot read {file_path}"
-        
+            return None, None, f"Permission denied: Cannot read {file_path}"
         # Process PDF files using PyPDF2
         if file_path.lower().endswith('.pdf'):
             text = ""
+            pages_text = []
             try:
                 with open(file_path, 'rb') as file:
                     pdf_reader = PyPDF2.PdfReader(file)
-                    
-                    # Check if PDF is encrypted
                     if pdf_reader.is_encrypted:
-                        return None, f"PDF is encrypted: {file_path}"
-                    
-                    # Extract text from each page
+                        return None, None, f"PDF is encrypted: {file_path}"
                     for page_num, page in enumerate(pdf_reader.pages):
                         try:
                             page_text = page.extract_text()
                             if page_text:
                                 text += page_text + "\n"
+                                pages_text.append((page_num, page_text))
                         except Exception as e:
                             print(f"Warning: Could not extract text from page {page_num + 1}: {e}")
                             continue
-                
-                return text.strip(), None
-                
+                structured_pages = extract_pdf_structure(pages_text)
+                return normalize_text(text.strip()), structured_pages, None
             except Exception as e:
-                return None, f"Error reading PDF {file_path}: {e}"
-        
+                return None, None, f"Error reading PDF {file_path}: {e}"
         # Process TXT files with UTF-8 encoding
         elif file_path.lower().endswith('.txt'):
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     text = file.read()
-                return text.strip(), None
+                return normalize_text(text.strip()), None, None
             except UnicodeDecodeError:
-                # Try with different encoding if UTF-8 fails
                 try:
                     with open(file_path, 'r', encoding='latin-1') as file:
                         text = file.read()
-                    return text.strip(), None
+                    return normalize_text(text.strip()), None, None
                 except Exception as e:
-                    return None, f"Error reading TXT file {file_path}: {e}"
+                    return None, None, f"Error reading TXT file {file_path}: {e}"
             except Exception as e:
-                return None, f"Error reading TXT file {file_path}: {e}"
-        
-        # Unsupported file type
+                return None, None, f"Error reading TXT file {file_path}: {e}"
         else:
-            return None, f"Unsupported file type: {file_path}. Supported formats: PDF, TXT"
-            
+            return None, None, f"Unsupported file type: {file_path}. Supported formats: PDF, TXT"
     except Exception as e:
-        return None, f"Unexpected error reading file {file_path}: {e}"
+        return None, None, f"Unexpected error reading file {file_path}: {e}"
 
-def chunk_document(text: str, doc_id: str, filename: str, chunk_size: int = 500, chunk_overlap: int = 50) -> List[Dict]:
+def chunk_document(text: str, doc_id: str, filename: str, chunk_size: int = 500, chunk_overlap: int = 50, structured_pages: list = None) -> List[Dict]:
     """
     Splits text into context-aware chunks with comprehensive metadata.
-    
-    This function uses LangChain's RecursiveCharacterTextSplitter for intelligent
-    text chunking that respects natural boundaries like paragraphs and sentences.
-    Each chunk is assigned a unique identifier and metadata for traceability.
-    
-    Args:
-        text (str): The text content to be chunked
-        doc_id (str): Unique identifier for the source document (UUID)
-        filename (str): Original filename for reference
-        chunk_size (int): Maximum size of each chunk in characters (default: 500)
-        chunk_overlap (int): Overlap between consecutive chunks in characters (default: 50)
-        
-    Returns:
-        List[Dict]: List of chunk dictionaries with metadata
-        
-    Note:
-        - chunk_size should be larger than chunk_overlap
-        - Smaller chunks provide more precise retrieval but may lose context
-        - Larger overlaps help maintain context across chunk boundaries
-        
-    Example:
-        >>> chunks = chunk_document("Long text content...", "doc_123", "sample.txt")
-        >>> print(f"Created {len(chunks)} chunks")
+    Accepts optional structured_pages for chapter/section metadata.
     """
     # Validate input parameters
     if not text or not text.strip():
         return []
-    
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    
     if chunk_overlap < 0:
         raise ValueError("chunk_overlap cannot be negative")
-    
     if chunk_overlap >= chunk_size:
         raise ValueError("chunk_overlap must be less than chunk_size")
-    
+    # Normalize text before splitting
+    text = normalize_text(text)
     # Use RecursiveCharacterTextSplitter for intelligent chunking
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         length_function=len,
-        separators=["\n\n", "\n", " ", ""]  # Prefer paragraph breaks, then line breaks, then spaces
+        separators=["\n\n", "\n", " ", ""]
     )
-    
-    # Split the text into chunks
     text_chunks = text_splitter.split_text(text)
-    
-    # Create chunk dictionaries with comprehensive metadata
+    # If structured_pages is provided, map chunk offsets to page/chapter/section
+    page_offsets = []
+    if structured_pages:
+        offset = 0
+        for page in structured_pages:
+            page_len = len(normalize_text(page['page_text']))
+            page_offsets.append((offset, offset + page_len, page))
+            offset += page_len
     chunks = []
+    running_offset = 0
     for i, chunk_content in enumerate(text_chunks):
-        # Generate unique chunk ID using SHA256 hash for consistency
         chunk_id = hashlib.sha256(f"{doc_id}-{i}-{chunk_content}".encode('utf-8')).hexdigest()
-        
+        # Default metadata
+        chapter_title = None
+        section_title = None
+        page_number = None
+        # If structured_pages, find which page/chapter/section this chunk belongs to
+        if structured_pages:
+            chunk_start = running_offset
+            chunk_end = running_offset + len(chunk_content)
+            for start, end, page in page_offsets:
+                if start <= chunk_start < end:
+                    chapter_title = page.get('chapter_title')
+                    section_title = page.get('section_title')
+                    page_number = page.get('page_num')
+                    break
         chunk_dict = {
             'content': chunk_content,
             'doc_id': doc_id,
@@ -211,11 +225,13 @@ def chunk_document(text: str, doc_id: str, filename: str, chunk_size: int = 500,
             'chunk_id': chunk_id,
             'chunk_index': i,
             'chunk_size': len(chunk_content),
-            'page_number': None,  # Placeholder for future PDF page tracking
-            'timestamp_hint': None  # Placeholder for future timestamp tracking
+            'page_number': page_number,
+            'chapter_title': chapter_title,
+            'section_title': section_title,
+            'timestamp_hint': None
         }
         chunks.append(chunk_dict)
-    
+        running_offset += len(chunk_content)
     return chunks
 
 # =============================================================================
@@ -632,7 +648,7 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
         # Format context chunks with source information
         context_text = ""
         for i, chunk in enumerate(context_chunks, 1):
-            context_text += f"Source {i} (File: {chunk['source']}, Chunk ID: {chunk['chunk_id']}):\n"
+            context_text += f"Source {i} (File: {chunk['source']}):\n"
             context_text += f"{chunk['content']}\n\n"
         
         # Construct comprehensive prompt with clear instructions
@@ -641,16 +657,18 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
 Instructions:
 1. Answer the question using ONLY the information provided in the context below.
 2. If the context doesn't contain enough information to answer the question, say so clearly.
-3. Cite your sources by mentioning the filename and chunk ID when referencing information.
-4. Provide a comprehensive and accurate answer based on the available context.
-5. If the question is ambiguous, ask for clarification.
+3. Cite your sources by mentioning the filename when referencing information.
+4. Provide an EXPANDED, detailed, and multi-paragraph answer. Summarize, explain, and elaborate as much as possible.
+5. Structure your answer with headings, bullet points, or numbered lists if appropriate for clarity.
+6. If the question is about a chapter, section, or topic, provide a comprehensive summary and highlight key points.
+7. If the question is ambiguous, ask for clarification.
 
 User Question: {query}
 
 Context:
 {context_text}
 
-Please provide a comprehensive answer based on the context above:"""
+Please provide a detailed, well-structured, and expanded answer based on the context above. If possible, include summaries, explanations, and examples to make the answer as helpful as possible."""
         
         # Generate response using Gemini API
         response = model.generate_content(prompt)
@@ -663,6 +681,73 @@ Please provide a comprehensive answer based on the context above:"""
             
     except Exception as e:
         return f"Error generating answer with Gemini: {e}"
+
+def estimate_tokens(text: str) -> int:
+    # Try tiktoken, fallback to char/4 (safe for most LLMs)
+    try:
+        import tiktoken
+        enc = tiktoken.encoding_for_model('gpt-3.5-turbo')
+        return len(enc.encode(text))
+    except Exception:
+        return max(1, int(len(text) / 4))
+
+def iterative_summarize_chunks(chunks, query, llm_model=None, max_tokens_per_group=6000, reduce_batch_size=5):
+    if not chunks:
+        return "No content to summarize."
+    def group_chunks_by_tokens(chunks, max_tokens):
+        groups, current, total = [], [], 0
+        for chunk in chunks:
+            chunk_tokens = estimate_tokens(chunk['content'])
+            if total + chunk_tokens > max_tokens and current:
+                groups.append(current)
+                current, total = [], 0
+            current.append(chunk)
+            total += chunk_tokens
+        if current:
+            groups.append(current)
+        return groups
+    groups = group_chunks_by_tokens(chunks, max_tokens_per_group)
+    improved_summary_prompt = (
+        f"{query}\n\nSummarize the following content in a clear, multi-paragraph format. "
+        "Use bullet points for key facts, and include a brief conclusion. "
+        "If the content is technical, explain terms simply."
+    )
+    if len(groups) == 1:
+        return generate_answer_with_gemini(improved_summary_prompt, groups[0])
+    else:
+        partial_summaries = []
+        for group in groups:
+            summary = generate_answer_with_gemini(improved_summary_prompt, group)
+            partial_summaries.append({'content': summary})
+        # Efficient reduce: group partial summaries into larger batches
+        reduced_groups = [partial_summaries[i:i+reduce_batch_size] for i in range(0, len(partial_summaries), reduce_batch_size)]
+        reduced_chunks = [{'content': ' '.join([s['content'] for s in group])} for group in reduced_groups]
+        return iterative_summarize_chunks(reduced_chunks, query, llm_model, max_tokens_per_group, reduce_batch_size)
+
+# Unified grouping and summarization helper
+
+def group_and_summarize(chunks, group_key, summary_prompt):
+    from collections import defaultdict
+    group_map = defaultdict(list)
+    for chunk in chunks:
+        key = chunk.get(group_key) or f'Unknown {group_key.title()}'
+        group_map[key].append(chunk)
+    summaries = {}
+    for key, group_chunks in group_map.items():
+        summary = iterative_summarize_chunks(group_chunks, summary_prompt)
+        # Store both summary and chunk metadata
+        summaries[key] = {
+            'summary': summary,
+            'chunks': [
+                {
+                    'page_number': c.get('page_number'),
+                    'start': c['content'][:60] + ('...' if len(c['content']) > 60 else ''),
+                    'chunk_index': c.get('chunk_index')
+                }
+                for c in group_chunks
+            ]
+        }
+    return summaries
 
 # =============================================================================
 # METRICS AND EVALUATION FUNCTIONS
@@ -1154,3 +1239,30 @@ def format_metrics_for_display(metrics: Dict[str, any]) -> str:
         formatted_lines.append(f"**{formatted_key}:** {formatted_value}")
     
     return "\n".join(formatted_lines)
+
+def safe_filename(name: str) -> str:
+    # Remove/replace unsafe characters for filenames
+    return ''.join(c if c.isalnum() or c in ('-', '_') else '_' for c in name)
+
+def get_summary_cache_path(doc_id: str, group_title: str, group_type: str = 'chapter') -> str:
+    safe_title = safe_filename(group_title)
+    return os.path.join('summaries', f'{doc_id}_{group_type}_{safe_title}.txt')
+
+def save_summary_cache(doc_id: str, group_title: str, summary: str, group_type: str = 'chapter'):
+    try:
+        os.makedirs('summaries', exist_ok=True)
+        path = get_summary_cache_path(doc_id, group_title, group_type)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(summary)
+    except Exception as e:
+        print(f'Error saving summary cache: {e}')
+
+def load_summary_cache(doc_id: str, group_title: str, group_type: str = 'chapter') -> str:
+    path = get_summary_cache_path(doc_id, group_title, group_type)
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f'Error loading summary cache: {e}')
+    return None
