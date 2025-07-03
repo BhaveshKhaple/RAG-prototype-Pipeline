@@ -1,0 +1,24 @@
+The provided text (File: PrepackagedFSM_unlocked.pdf) describes configuring the prepackaged integration between SAP Cloud Integration and SAP Field Service Management (FSM).  The configuration involves several parameters, primarily focusing on setting up the connection and authentication. Let's break down the key aspects:
+
+**1. Host URL and Domain Migration:**
+
+The configuration requires specifying the FSM's host URL (e.g., `https:de.coresuite.com`).  Crucially, the document highlights an ongoing domain migration from `.coresystems.net` and `.coresuite.com` to the new `.cloud.sap` domain. While both old and new domains are currently supported, this support will be phased out by 2026.  This is a significant point because users should plan to update their configurations to the new domain before the older ones are decommissioned.  The transition is designed to be seamless, ensuring existing bookmarks and FSM APIs continue to function without interruption until the decommissioning date.
+
+**2. Authentication Credentials:**
+
+Setting up the connection necessitates providing OAuth2 credentials for the FSM. This is done through the "Credential Name" parameter.  The configuration also requires information about the FSM account itself, specifically:
+
+*   **FSM Account Name:**  The name of the FSM account being integrated.
+*   **Company:** The name of the company associated with the FSM account.
+*   **Client Identifier:**  A unique identifier for the client application (likely generated during the application's registration).
+
+This information is essential for authenticating the SAP Cloud Integration system with the FSM system and allowing data exchange.  The specific method of obtaining these credentials is not described in the provided text.
+
+**3. Contact Person Replication:**
+
+The document mentions a parameter to "replicate contact person relationships from SAP Field Service Management." This implies that the integration can synchronize contact information between the two systems.  The receiving system for this replication is explicitly mentioned as "FSM," confirming data flows from SAP Field Service Management into itself through the integration setup.  This likely ensures consistency in contact data across both systems.
+
+
+**Conclusion:**
+
+The provided excerpts detail the configuration parameters for integrating SAP Cloud Integration with SAP Field Service Management.  The key takeaway is the ongoing domain migration, which necessitates planning for the transition to the `.cloud.sap` domain before 2026.  The configuration relies on providing correct OAuth2 credentials and various account-specific details for successful integration and seamless data exchange between the two SAP systems, particularly for contact person information synchronization.  The document fragments focus primarily on the technical aspects of setup and don't delve into the broader functionality or benefits of this integration.

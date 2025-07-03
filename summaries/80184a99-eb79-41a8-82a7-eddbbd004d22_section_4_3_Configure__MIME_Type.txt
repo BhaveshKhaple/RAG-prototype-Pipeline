@@ -1,0 +1,34 @@
+The provided text from `PrepackagedFSM_unlocked.pdf` details the parameters required to configure a prepackaged integration, likely between SAP Service Cloud and SAP Field Service Management (FSM).  The configuration involves specifying various URLs, credentials, and other settings. Let's break down the key parameters and their significance:
+
+**Section 1: Connecting to SAP Service Cloud (C4C)**
+
+This section outlines the parameters needed to establish a connection with SAP Service Cloud.  There are two distinct connection methods indicated, both requiring the SAP Service Cloud host URL (e.g., `https:.dev.sapbydesign.com`).
+
+*   **Method 1 (C4C OData Access):** This method uses OAuth2 credentials for authentication.  The user must provide:
+    *   **Client Identifier:**  A unique identifier for the client application.
+    *   **Credential Name:** The name of the deployed OAuth2 credential for the FSM.
+    *   **Receiver (select C4C):** Specifies that the receiver is SAP Service Cloud.
+
+*   **Method 2 (C4C Basic Authentication or Client Certificate):** This method offers alternative authentication schemes:
+    *   **Basic Authentication:** Requires the `Credential Name` of the user credential deployed in the Communication Arrangement within SAP Service Cloud.
+    *   **Client Certificate Authentication:** Requires the `Private Key Alias` of the client certificate deployed in SAP Service Cloud.  This is a more secure method compared to basic authentication.
+
+**Section 2: Connecting to SAP Field Service Management (FSM)**
+
+This section focuses on configuring the connection to SAP Field Service Management.  It highlights the importance of using the updated domain name (.cloud.sap) while noting that older domains (.coresystems.net and .coresuite.com) are supported until 2026.
+
+*   **FSM Host URL:** The URL of the FSM system (e.g., `https: et.dev.coresuite.com`).  It is strongly recommended to use the new `.cloud.sap` domain.
+*   **Credential Name:** The OAuth2 credential for the deployed FSM instance.
+*   **Client Identifier:** The client ID.
+*   **Company, FSM Account Name:**  Information identifying the specific company and account within FSM.
+
+**Section 3: Language Configuration**
+
+This section describes the configuration of language codes for objects within SAP Service Cloud, such as skills, registered products, and notes.
+
+*   **Language Code:** The primary language code used during the replication process.
+*   **Fallback Language Code:** A secondary language code used if the primary language code is not available.  This feature was introduced in February 2020 to allow for greater flexibility in language handling.  Before this, the default language was English ("en").
+
+**Conclusion:**
+
+The configuration process involves setting up connections to both SAP Service Cloud and SAP Field Service Management, using various authentication methods and specifying relevant identifiers and credentials.  Proper configuration of language codes is also crucial for ensuring data consistency and accuracy during the replication process. The document emphasizes the transition to the new `.cloud.sap` domain for FSM, ensuring future compatibility and stability.  All parameters need to be accurately entered to ensure seamless integration between the two systems.

@@ -1,0 +1,52 @@
+This document (File: PrepackagedFSM_unlocked.pdf) details the configuration of prepackaged integration flows between SAP Service Cloud (C4C) and SAP Field Service Management (FSM) using SAP Cloud Integration (CI).  The instructions cover several key areas, including prerequisite setup, OAuth2 credential deployment,  iflow parameter configuration, and data replication between the systems.
+
+### I. Prerequisites and Security Setup
+
+Before configuring the integration, several prerequisites must be met (Source 1, Source 2):
+
+* **Root Certificate Import:**  Download and import root certificates for `cluster.coresuite.com`, `cluster.coresystems.net`, and the C4C tenant URL into the CI keystore. FSM root certificates can be downloaded from `https://letsencrypt.org/certificates` (Note:  These certificates are subject to change, so regular checks for updates are necessary).  The example URL `https://letsencrypt.org/certs/trustid-x3-root.pem.txt` is provided.
+
+* **OAuth2 Credential Deployment:** In CI, under "Operations > Security Material > Add OAuth2 Credentials," create OAuth2 credentials for FSM. Key fields to populate include:
+    * **Name:**  A descriptive name (e.g., `fsm_int_client_credentials`).
+    * **Grant Type:** `client_credentials`.
+    * **Authentication URL:** `https://auth.coresuite.com/api/oauth2/v1/token` (Note:  While `.coresystems.net` and `.coresuite.com` domains are currently supported,  `.cloud.sap` is recommended, and both will be supported in parallel until 2026).
+    * **Client ID and Client Secret:** Obtain these from your SAP Field Service Management system.
+    * **Client Authentication:** `send as request header`.
+    * **Scope:** `general`.
+    * **Content Type:** `application/x-www-form-urlencoded`.
+
+* **SAP Service Cloud Credentials:** Deploy user credentials for both business partner relationship access and inbound communication (if used for authentication) within CI under  "Operations > Security Material > Add User Credentials."
+
+
+### II. iFlow Parameter Configuration
+
+The document extensively details configuring iFlow parameters for various data replication scenarios between C4C and FSM (Source 6, Source 7, Source 9-Source 33).  These configurations involve specifying the receiver system (FSM or C4C), host URLs (with the recommendation to migrate to the `.cloud.sap` domain), account names, company names, client IDs, and OAuth2/user credentials previously deployed.
+
+Each integration flow focuses on replicating specific data types:
+
+* **Contact Person Relationship:**  Replicates contact person information to FSM.
+* **Employee:** Replicates employee data to FSM.
+* **Registered Product:** Replicates registered product information to FSM.
+* **Product:** Replicates product data to FSM.
+* **Product Category Hierarchy:** Replicates the product category hierarchy to FSM.
+* **Material Stock:** Replicates material stock data to FSM.
+* **Business Partner:** Replicates business partner information to FSM.
+* **Service Ticket:** Replicates service tickets to FSM.
+* **Service Call (from FSM to C4C and vice-versa):**  Facilitates bidirectional service call replication.
+* **Attachments (from FSM to C4C and vice-versa):** Enables the exchange of attachments between the systems.
+* **Skills:** Replicates skill data to FSM.
+
+
+For each of these, the parameters commonly include:
+
+* **Receiver:** Specifies the target system (FSM or C4C).
+* **FSM Host Name/C4C Host URL:** The respective URL, with the `.cloud.sap` domain strongly recommended.
+* **FSM Account Name, Company Name:**  Relevant FSM account and company identifiers.
+* **Client Identifier:** The Client ID from the OAuth2 credentials.
+* **Credential Name:** The name of the deployed OAuth2 or user credentials.
+* **Other parameters:**  Specific parameters such as  `Complete Payload` (for delta changes), `Authentication Method`, `Private Key Alias` (for client certificate authentication) are also used depending on the specific integration flow.
+
+
+### III. Conclusion
+
+The document provides a detailed step-by-step guide for setting up and configuring the prepackaged integration flows between SAP Service Cloud and SAP Field Service Management via SAP Cloud Integration.  Successful implementation necessitates careful attention to prerequisite security setup, OAuth2 and user credential management, and accurate configuration of numerous iFlow parameters for each data replication scenario.  The ongoing recommendation to migrate to the `.cloud.sap` domain emphasizes the importance of proactively adapting to evolving system infrastructure.

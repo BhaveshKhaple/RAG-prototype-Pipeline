@@ -1,0 +1,20 @@
+The provided text describes the configuration of the SAP Field Service Management (FSM) system, focusing on setting up accounts, companies, and OAuth clients for integration with SAP Service Cloud.  The instructions are presented as procedural steps for administrators.
+
+**Section 2.1: Account and Company Configuration**
+
+This section details the initial setup of an account and company within the SAP FSM system. This setup is crucial for enabling the integration with SAP Cloud for Customer.  The process begins with provisioning an SAP FSM tenant, which grants access to the system.  Upon provisioning, an administrator receives an FSM account, a password, and a superuser role, all essential for managing the system (File: PrepackagedFSM_unlocked.pdf).  The account and company configured here are specifically for the connection to SAP Cloud for Customer, highlighting the system's interoperability.  Further information on tenant provisioning is referenced from an external link (https: docs.coresystems.net,  File: PrepackagedFSM_unlocked.pdf), indicating that the provided text is an excerpt from a larger documentation set.
+
+
+**Section 2.2: OAuth Client Creation**
+
+This section outlines the creation of an OAuth client, a vital component for secure communication between the SAP FSM system and the SAP Cloud Platform Integration system.  The creation process involves navigating to the "clients" section and clicking "create" (File: PrepackagedFSM_unlocked.pdf).  The administrator needs to input specific details in the "create client" window.  A critical detail is selecting "standalone" for the type, although the exact implication of this selection isn't explicitly explained (File: PrepackagedFSM_unlocked.pdf).  This OAuth client acts as a secure bridge, allowing authorized applications to access the SAP FSM system's resources.  The absence of detail regarding required fields and the meaning of "standalone" limits a more thorough explanation.
+
+**Key Points Summary:**
+
+* **Tenant Provisioning:**  Obtaining access to the SAP FSM system involves provisioning a tenant. This provides an account, password, and superuser role.
+* **Company Setup:**  Creating a company within the SAP FSM system is a necessary step, requiring the selection of "standalone" as the type. The exact meaning of this type is unclear from the provided text.
+* **OAuth Client Creation:**  Setting up an OAuth client is essential for secure integration with SAP Cloud Platform Integration. This process involves specifying details in the "create client" window.
+
+**Conclusion:**
+
+The provided text segments from "PrepackagedFSM_unlocked.pdf" offer a partial guide to configuring the SAP FSM system for integration with SAP Service Cloud.  The instructions cover crucial steps like setting up accounts, companies, and OAuth clients. However, a complete understanding requires consulting the referenced external documentation for detailed explanations of certain fields and options, particularly regarding the implications of choosing "standalone" for the company type and the specifics required within the "create client" window.  The provided information serves as a high-level overview, sufficient for understanding the general process but incomplete for practical implementation.

@@ -345,6 +345,9 @@ for message in st.session_state.chat_history:
 # CHAT INPUT AND RESPONSE GENERATION
 # =============================================================================
 
+# Place this before any use of handled_chapter_summary, before chat input and chapter summary logic
+handled_chapter_summary = False
+
 # Determine if chat input should be disabled
 chat_input_disabled = not st.session_state.embedding_model_loaded or len(st.session_state.vector_store.chunks_data) == 0
 
@@ -362,8 +365,8 @@ user_query = st.chat_input(
 )
 
 # Process user query and generate response
-if user_query:
-    # Add user query to chat history
+if not handled_chapter_summary:
+    # Add the user query to chat history
     st.session_state.chat_history.append({"role": "user", "content": user_query})
 
     # Display user message
@@ -382,9 +385,6 @@ if user_query:
                 else:
                     # Generate query embedding with error handling
                     try:
-                        # Ensure 'embedding_model' is correctly initialized and available
-                        # If embedding_model is a global variable from utils, ensure it's configured
-                        # For Gemini embeddings, it would be genai.get_embedding_model() or similar.
                         query_embedding = embedding_model.encode([user_query])[0]
                     except Exception as e:
                         st.error(f"Error generating query embedding: {e}")
@@ -395,39 +395,32 @@ if user_query:
                             'summarize', 'overview', 'all', 'chapter', 'section',
                             'explain', 'describe', 'how does', 'what is', 'deep dive'
                         ]
-                        if any(word in user_query.lower() for word in broad_keywords):
+                        user_query_str = user_query if isinstance(user_query, str) else (str(user_query) if user_query is not None else "")
+                        if any(word in user_query_str.lower() for word in broad_keywords):
                             k_value = max(context_depth, 15)
                         else:
                             k_value = context_depth
                         retrieved_chunks = st.session_state.vector_store.search(query_embedding, k=k_value)
 
                         if retrieved_chunks:
-                            # Generate answer using Gemini with context
                             assistant_response = generate_answer_with_gemini(user_query, retrieved_chunks)
-
-                            # Calculate metrics for this query
                             retrieval_metrics = calculate_retrieval_metrics(user_query, retrieved_chunks, query_embedding)
                             response_metrics = calculate_response_metrics(assistant_response, user_query, retrieved_chunks)
-
-                            # Store metrics in session state
                             st.session_state.last_query_metrics = {
                                 'retrieval': retrieval_metrics,
                                 'response': response_metrics,
                                 'query': user_query,
-                                'timestamp': str(uuid.uuid4())[:8]  # Short timestamp for identification
+                                'timestamp': str(uuid.uuid4())[:8]
                             }
                         else:
                             assistant_response = "I couldn't find any relevant information in the loaded documents to answer your question."
                             st.session_state.last_query_metrics = None
 
-                # Display the assistant response
                 st.markdown(assistant_response)
 
-                # Display metrics if available
                 if st.session_state.last_query_metrics and retrieved_chunks:
                     with st.expander("📊 Query Performance Metrics", expanded=False):
                         col1, col2 = st.columns(2)
-
                         with col1:
                             st.subheader("🔍 Retrieval Metrics")
                             retrieval_metrics = st.session_state.last_query_metrics['retrieval']
@@ -435,7 +428,6 @@ if user_query:
                             st.metric("Avg Similarity", f"{retrieval_metrics['avg_similarity']:.3f}")
                             st.metric("🎯 Retrieval Accuracy", f"{retrieval_metrics['retrieval_accuracy']:.1%}")
                             st.metric("🔗 Semantic Coherence", f"{retrieval_metrics['semantic_coherence']:.3f}")
-
                         with col2:
                             st.subheader("💬 Response Metrics")
                             response_metrics = st.session_state.last_query_metrics['response']
@@ -443,20 +435,13 @@ if user_query:
                             st.metric("🎯 Response Accuracy", f"{response_metrics['response_accuracy']:.1%}")
                             st.metric("📊 Context Utilization", f"{response_metrics['context_utilization']:.1%}")
                             st.metric("✅ Answer Completeness", f"{response_metrics['answer_completeness']:.1%}")
-
-                        # Detailed metrics
                         st.subheader("📈 Detailed Metrics")
                         detailed_tab1, detailed_tab2 = st.tabs(["Retrieval Details", "Response Details"])
-
                         with detailed_tab1:
                             st.markdown(format_metrics_for_display(retrieval_metrics))
-
                         with detailed_tab2:
                             st.markdown(format_metrics_for_display(response_metrics))
-
-                # Add assistant response to chat history
                 st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-
             except Exception as e:
                 error_msg = f"An error occurred while processing your question: {e}"
                 st.error(error_msg)
@@ -705,7 +690,7 @@ if summarize_chapters_button:
         if cached:
             summary = cached
         else:
-            summary = iterative_summarize_chunks(group_chunks, summary_prompt, prompt_type='summarize_chapter')
+            summary = iterative_summarize_chunks(group_chunks, summary_prompt)
             save_summary_cache(doc_id, chapter, summary, group_type='chapter')
         summaries[chapter] = {
             'summary': summary,
@@ -734,7 +719,7 @@ if summarize_sections_button:
         if cached:
             summary = cached
         else:
-            summary = iterative_summarize_chunks(group_chunks, summary_prompt, prompt_type='summarize_chapter')
+            summary = iterative_summarize_chunks(group_chunks, summary_prompt)
             save_summary_cache(doc_id, section, summary, group_type='section')
         summaries[section] = {
             'summary': summary,
@@ -768,7 +753,9 @@ if st.session_state.chapter_summaries or st.session_state.section_summaries:
                             st.markdown(
                                 f"- **Page:** {chunk['page_number']} | **Chunk:** {chunk['chunk_index']} | _{chunk['start']}_"
                             )
-                if not summary or 'error' in summary.lower() or 'no content' in summary.lower():
+                # Fix: Ensure summary is a string before calling lower()
+                summary_str = summary if isinstance(summary, str) else (str(summary) if summary is not None else "")
+                if not summary_str or 'error' in summary_str.lower() or 'no content' in summary_str.lower():
                     if st.button(f"Retry {chapter}"):
                         summary_prompt = "Summarize the following chapter in detail, highlighting all key points, sections, and important information."
                         st.session_state.chapter_summaries[chapter] = iterative_summarize_chunks(
@@ -787,10 +774,31 @@ if st.session_state.chapter_summaries or st.session_state.section_summaries:
                             st.markdown(
                                 f"- **Page:** {chunk['page_number']} | **Chunk:** {chunk['chunk_index']} | _{chunk['start']}_"
                             )
-                if not summary or 'error' in summary.lower() or 'no content' in summary.lower():
+                # Fix: Ensure summary is a string before calling lower()
+                summary_str = summary if isinstance(summary, str) else (str(summary) if summary is not None else "")
+                if not summary_str or 'error' in summary_str.lower() or 'no content' in summary_str.lower():
                     if st.button(f"Retry {section}"):
                         summary_prompt = "Summarize the following section in detail, highlighting all key points and important information."
                         st.session_state.section_summaries[section] = iterative_summarize_chunks(
                             [c for c in st.session_state.vector_store.chunks_data if c.get('section_title') == section],
                             summary_prompt
                         )
+
+handled_chapter_summary = False
+import re
+# Replace with safe handling
+user_query_str = user_query if isinstance(user_query, str) else (str(user_query) if user_query is not None else "")
+user_query_lower = user_query_str.lower()
+chapter_match = re.match(r"summarize chapter (\d+)", user_query_lower)
+if chapter_match:
+    chapter_num = chapter_match.group(1)
+    chapter_chunks = [c for c in st.session_state.vector_store.chunks_data if c.get('chapter_number') == chapter_num]
+    if chapter_chunks:
+        chapter_title = chapter_chunks[0].get('chapter_title', f'Chapter {chapter_num}')
+        summary_prompt = f"Summarize the following 'Chapter {chapter_num}: {chapter_title}' content. Provide a comprehensive overview, highlighting key concepts, main arguments, and important takeaways. Use headings and bullet points for clarity."
+        assistant_response = iterative_summarize_chunks(chapter_chunks, summary_prompt)
+    else:
+        assistant_response = f"No content found for Chapter {chapter_num}."
+    st.markdown(assistant_response)
+    st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
+    handled_chapter_summary = True_

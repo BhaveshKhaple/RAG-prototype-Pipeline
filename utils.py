@@ -86,14 +86,14 @@ def normalize_text(text: str) -> str:
 # DOCUMENT PROCESSING FUNCTIONS
 # =============================================================================
 
-# Helper for PDF chapter/section detection
 def extract_pdf_structure(pages_text: list) -> list:
     """
-    Given a list of (page_num, page_text), return a list of dicts with page_text, chapter_title, section_title.
-    Uses regex to detect chapter/section headings (e.g., '1 Title', '2.1 Subsection').
+    Given a list of (page_num, page_text), return a list of dicts with page_text, chapter_title, chapter_number, section_title.
+    Uses regex to detect chapter/section headings (e.g., '1 Why Machine Learning Strategy').
     """
     structure = []
     current_chapter = None
+    current_chapter_number = None
     current_section = None
     chapter_pattern = re.compile(r"^(\d+)\s+(.+)", re.MULTILINE)
     section_pattern = re.compile(r"^(\d+\.\d+)\s+(.+)", re.MULTILINE)
@@ -102,6 +102,7 @@ def extract_pdf_structure(pages_text: list) -> list:
         section_found = section_pattern.findall(page_text)
         # Use the last match on the page (if multiple headings)
         if chapter_found:
+            current_chapter_number = chapter_found[-1][0]
             current_chapter = f"{chapter_found[-1][0]} {chapter_found[-1][1].strip()}"
         if section_found:
             current_section = f"{section_found[-1][0]} {section_found[-1][1].strip()}"
@@ -109,6 +110,7 @@ def extract_pdf_structure(pages_text: list) -> list:
             'page_num': page_num,
             'page_text': page_text,
             'chapter_title': current_chapter,
+            'chapter_number': current_chapter_number,
             'section_title': current_section
         })
     return structure
@@ -206,6 +208,7 @@ def chunk_document(text: str, doc_id: str, filename: str, chunk_size: int = 500,
         chunk_id = hashlib.sha256(f"{doc_id}-{i}-{chunk_content}".encode('utf-8')).hexdigest()
         # Default metadata
         chapter_title = None
+        chapter_number = None
         section_title = None
         page_number = None
         # If structured_pages, find which page/chapter/section this chunk belongs to
@@ -215,6 +218,7 @@ def chunk_document(text: str, doc_id: str, filename: str, chunk_size: int = 500,
             for start, end, page in page_offsets:
                 if start <= chunk_start < end:
                     chapter_title = page.get('chapter_title')
+                    chapter_number = page.get('chapter_number')
                     section_title = page.get('section_title')
                     page_number = page.get('page_num')
                     break
@@ -227,6 +231,7 @@ def chunk_document(text: str, doc_id: str, filename: str, chunk_size: int = 500,
             'chunk_size': len(chunk_content),
             'page_number': page_number,
             'chapter_title': chapter_title,
+            'chapter_number': chapter_number,
             'section_title': section_title,
             'timestamp_hint': None
         }
@@ -643,7 +648,7 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
     
     try:
         # Initialize Gemini model
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')  # Free tier model as of 2024-2025
         
         # Format context chunks with source information
         context_text = ""
@@ -651,24 +656,20 @@ def generate_answer_with_gemini(query: str, context_chunks: List[Dict]) -> str:
             context_text += f"Source {i} (File: {chunk['source']}):\n"
             context_text += f"{chunk['content']}\n\n"
         
-        # Construct comprehensive prompt with clear instructions
-        prompt = f"""You are a helpful assistant that answers questions based on the provided context.
-
-Instructions:
-1. Answer the question using ONLY the information provided in the context below.
-2. If the context doesn't contain enough information to answer the question, say so clearly.
-3. Cite your sources by mentioning the filename when referencing information.
-4. Provide an EXPANDED, detailed, and multi-paragraph answer. Summarize, explain, and elaborate as much as possible.
-5. Structure your answer with headings, bullet points, or numbered lists if appropriate for clarity.
-6. If the question is about a chapter, section, or topic, provide a comprehensive summary and highlight key points.
-7. If the question is ambiguous, ask for clarification.
-
-User Question: {query}
-
-Context:
-{context_text}
-
-Please provide a detailed, well-structured, and expanded answer based on the context above. If possible, include summaries, explanations, and examples to make the answer as helpful as possible."""
+        # Detect if the user is asking for a summary
+        summary_keywords = [
+            'summary', 'summarize', 'give me a summary', 'provide a summary',
+            'can you summarize', 'please summarize', 'brief summary', 'short summary',
+            'chapter summary', 'section summary', 'document summary', 'overall summary',
+            'summarise', 'summarization', 'summarise this', 'summarize this', 'summarize the following',
+        ]
+        is_summary_request = any(kw in query.lower() for kw in summary_keywords)
+        
+        if is_summary_request:
+            prompt = f"""You are a helpful assistant. Your ONLY task is to provide a clear, concise, and well-structured summary of the content below. Do NOT answer questions, do NOT elaborate, do NOT provide explanations, and do NOT include anything except the summary itself. If the content is technical, explain terms simply.\n\nUser Request: {query}\n\nContext:\n{context_text}\n\nPlease provide ONLY the summary, nothing else."""
+        else:
+            # Construct comprehensive prompt with clear instructions
+            prompt = f"""You are a helpful assistant that answers questions based on the provided context.\n\nInstructions:\n1. Answer the question using ONLY the information provided in the context below.\n2. If the context doesn't contain enough information to answer the question, say so clearly.\n3. Cite your sources by mentioning the filename when referencing information.\n4. Provide an EXPANDED, detailed, and multi-paragraph answer. Summarize, explain, and elaborate as much as possible.\n5. Structure your answer with headings, bullet points, or numbered lists if appropriate for clarity.\n6. If the question is about a chapter, section, or topic, provide a comprehensive summary and highlight key points.\n7. If the question is ambiguous, ask for clarification.\n\nUser Question: {query}\n\nContext:\n{context_text}\n\nPlease provide a detailed, well-structured, and expanded answer based on the context above. If possible, include summaries, explanations, and examples to make the answer as helpful as possible."""
         
         # Generate response using Gemini API
         response = model.generate_content(prompt)

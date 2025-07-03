@@ -117,7 +117,7 @@ def test_gemini_connection():
             return False
         
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')  # Free tier model as of 2024-2025
         
         # Simple test prompt
         response = model.generate_content("Say 'Hello, RAG prototype!'")

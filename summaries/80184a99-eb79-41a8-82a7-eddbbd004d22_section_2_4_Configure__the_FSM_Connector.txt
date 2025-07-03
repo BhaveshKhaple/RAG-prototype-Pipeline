@@ -1,0 +1,30 @@
+This document (File: PrepackagedFSM_unlocked.pdf) details the configuration steps for integrating a Field Service Management (FSM) system with SAP.  The instructions are broken down into several sections, each focusing on a specific aspect of the integration process.
+
+**Section 2.3: Configuring Business Rules for TM Approval**
+
+This section outlines the necessary business rule configurations for approving Time Management (TM) journal entries.  The key point here is that several types of newly created entries—efforts, expenses, materials, and mileage—require approval before synchronization with the Enterprise Resource Planning (ERP) system.  This is a crucial control point to ensure data accuracy and prevent unauthorized changes.  The specific business rules are:
+
+*   Sample - Newly created efforts require approval to be synchronized to the ERP.
+*   Sample - Newly created expenses require approval to be synchronized to the ERP.
+*   Sample - Newly created materials require approval to be synchronized to the ERP.
+*   Sample - Newly created mileage require approval to be synchronized to the ERP.
+*   Sample - Update responsible person of all checklists linked to an activity when releasing the activity to the technician.
+
+This ensures that all TM data undergoes a review process before being integrated with the ERP system, maintaining data integrity and control.
+
+
+**Section 2.4: Configuring the FSM Connector**
+
+This section describes the setup of the FSM connector within the SAP Field Service Management system. The process involves several steps:
+
+1.  **Enabling the Connector:**  Navigate to the relevant section within the FSM system and ensure the connector is enabled. This is a fundamental first step, activating the integration functionality.
+
+2.  **Endpoint Setup:** Define the endpoint where notifications will be sent.  This endpoint acts as the communication channel between the FSM system and other systems.
+
+3.  **Ticket iFlow Endpoint Configuration:**  Configure the ticket iFlow endpoint using specific information, including the URL for the SAP Field Service Management to SAP Service Cloud ticket iFlow. The example provided is `https: c-iflmap.hcisb.int.sap.eu2.hana.onde-mand.comhttpfsmc4cticket`.  Authentication uses Basic Auth, requiring a CPI user with the `esbmessaging.send` role and their corresponding password.  The integration type is specified as `C4C`.
+
+4.  **Extended Configuration (Optional):** This section covers optional configurations, contingent upon whether the options are "in scope."  If enabled, configurations for attachments, contact information, and contact relationships are set up through additional CPI iFlow endpoints. For example, the attachment replication uses a URL like `https:c- iflmap.hcisb.int.sap.eu2.h ana.ondemand.com httpfsmc4cattachments`. The specific URL components after `httpfsmc4c` are user-defined but must be unique to the CPI tenant.
+
+**Conclusion:**
+
+The provided text from "PrepackagedFSM_unlocked.pdf" outlines the crucial steps for configuring an FSM integration with SAP.  The configuration involves setting up business rules for TM approval, configuring the FSM connector itself (including specifying endpoints and authentication details), and optionally configuring additional features like attachment and contact replication.  The success of the integration relies on accurately configuring each of these steps, ensuring seamless data flow between the FSM and SAP systems.  The use of specific URLs and authentication methods highlights the importance of precise configuration in achieving a working integration.
